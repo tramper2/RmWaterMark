@@ -316,7 +316,7 @@ def process_watermark_removal(
         if fp16 and torch.cuda.is_available():
             cmd.append("--fp16")
 
-        # Run subprocess
+        # Run subprocess with real-time progress parsing
         log_lines = []
         process = subprocess.Popen(
             cmd,
@@ -328,12 +328,69 @@ def process_watermark_removal(
             universal_newlines=True,
         )
 
-        for line in iter(process.stdout.readline, ""):
-            line_str = line.strip()
-            if line_str:
+        import re
+        buffer = ""
+        current_frame_text = f"0 / {frame_count} 프레임 (준비 중...)"
+        last_yield_time = time.time()
+
+        while True:
+            char = process.stdout.read(1)
+            if not char:
+                if buffer.strip():
+                    log_lines.append(buffer.strip())
+                break
+            if char in ("\r", "\n"):
+                line_str = buffer.strip()
+                buffer = ""
+                if not line_str:
+                    continue
+
                 log_lines.append(line_str)
-                recent_logs = "\n".join(log_lines[-12:])
-                yield gr.update(), f"🤖 ProPainter GPU 인페인팅 진행 중...\n{recent_logs}"
+                # Keep last 10 log lines
+                recent_logs = "\n".join(log_lines[-10:])
+
+                # Parse tqdm progress line
+                tqdm_match = re.search(r"(\d+)%\|.*?\|\s*(\d+)/(\d+)\s*\[(.*?)(?:,\s*(.*?))?\]", line_str)
+                if tqdm_match:
+                    pct = int(tqdm_match.group(1))
+                    curr_step = int(tqdm_match.group(2))
+                    total_steps = int(tqdm_match.group(3))
+                    time_info = tqdm_match.group(4)
+                    speed_info = tqdm_match.group(5) or ""
+
+                    curr_frame = min(frame_count, int((curr_step / total_steps) * frame_count))
+                    bar_len = 20
+                    filled = int(bar_len * curr_step / total_steps)
+                    bar = "█" * filled + "░" * (bar_len - filled)
+
+                    progress(curr_step / total_steps, desc=f"인페인팅: {curr_frame}/{frame_count} 프레임 ({pct}%)")
+
+                    status_msg = (
+                        f"🚀 [3/4] ProPainter GPU 비디오 인페인팅 실행 중...\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🎞️ 현재 프레임 처리 현황: {curr_frame} / {frame_count} 프레임 ({pct}%) [{bar}]\n"
+                        f"📊 세부 연산 단계:        {curr_step} / {total_steps} Steps\n"
+                        f"⏱️ 소요/남은 시간:       {time_info}\n"
+                        f"⚡ GPU 연산 속도:        {speed_info}\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📝 최근 실행 로그:\n{recent_logs}"
+                    )
+                    last_yield_time = time.time()
+                    yield gr.update(), status_msg
+                else:
+                    # Update periodically for non-tqdm logs (e.g. optical flow setup)
+                    if time.time() - last_yield_time > 0.5:
+                        last_yield_time = time.time()
+                        status_msg = (
+                            f"🚀 [3/4] ProPainter GPU 비디오 인페인팅 실행 중...\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"⏳ 초기 Flow 계산 및 프레임 분석 중... (총 {frame_count} 프레임)\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📝 최근 실행 로그:\n{recent_logs}"
+                        )
+                        yield gr.update(), status_msg
+            else:
+                buffer += char
 
         process.stdout.close()
         return_code = process.wait()
