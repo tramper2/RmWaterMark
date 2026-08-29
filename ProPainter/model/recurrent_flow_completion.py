@@ -269,9 +269,7 @@ class RecurrentFlowCompleteNet(nn.Module):
             self.load_state_dict(ckpt, strict=True)
 
 
-    def forward(self, masked_flows, masks):
-        # masked_flows: b t-1 2 h w
-        # masks: b t-1 2 h w
+    def _forward_network(self, masked_flows, masks):
         b, t, _, h, w = masked_flows.size()
         masked_flows = masked_flows.permute(0,2,1,3,4)
         masks = masks.permute(0,2,1,3,4)
@@ -308,6 +306,47 @@ class RecurrentFlowCompleteNet(nn.Module):
 
         return flow, edge
         
+
+    def forward(self, masked_flows, masks):
+        # masked_flows: b t-1 2 h w
+        # masks: b t-1 1 h w
+        b, t, _, h, w = masked_flows.size()
+        
+        # Max resolution for 3D Conv flow completion on consumer GPUs (e.g. max dim <= 640)
+        max_flow_dim = 640
+        if max(h, w) > max_flow_dim:
+            scale = max_flow_dim / max(h, w)
+            rh = int(h * scale) - int(h * scale) % 8
+            rw = int(w * scale) - int(w * scale) % 8
+            scale_y = h / rh
+            scale_x = w / rw
+
+            masked_flows_scaled = F.interpolate(
+                masked_flows.view(b * t, 2, h, w), size=(rh, rw), mode='bilinear', align_corners=False
+            ).view(b, t, 2, rh, rw)
+            masked_flows_scaled[:, :, 0, :, :] *= (rw / w)
+            masked_flows_scaled[:, :, 1, :, :] *= (rh / h)
+
+            masks_scaled = F.interpolate(
+                masks.view(b * t, 1, h, w), size=(rh, rw), mode='nearest'
+            ).view(b, t, 1, rh, rw)
+
+            flow_scaled, edge = self._forward_network(masked_flows_scaled, masks_scaled)
+
+            # Upscale output flow back to original (h, w)
+            flow = F.interpolate(
+                flow_scaled.view(b * t, 2, rh, rw), size=(h, w), mode='bilinear', align_corners=False
+            ).view(b, t, 2, h, w)
+            flow[:, :, 0, :, :] *= scale_x
+            flow[:, :, 1, :, :] *= scale_y
+
+            if edge is not None:
+                edge = F.interpolate(edge.view(b * t, 1, rh, rw), size=(h, w), mode='bilinear', align_corners=False).view(b, t, 1, h, w)
+
+            return flow, edge
+        else:
+            return self._forward_network(masked_flows, masks)
+
 
     def forward_bidirect_flow(self, masked_flows_bi, masks):
         """

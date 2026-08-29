@@ -594,7 +594,7 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
                 label="Subvideo Length (Frames)",
                 minimum=20,
                 maximum=120,
-                value=80,
+                value=60,
                 step=10,
                 info="Lower to 40-50 if encountering VRAM issues on long videos",
             )
