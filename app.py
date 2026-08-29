@@ -783,8 +783,14 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
     def apply_preset_gemini_916(video, time_sec):
         vpath = get_clean_video_path(video)
         w, h, _, _, _, _ = get_video_info(vpath)
-        rw, rh = int(w * 0.22), int(h * 0.05)
-        rx, ry = w - rw - 15, h - rh - 25
+        if w == 1080 and h == 1920:
+            rx, ry, rw, rh = 865, 1700, 80, 80
+        else:
+            scale_x, scale_y = w / 1080.0, h / 1920.0
+            rx = int(865 * scale_x)
+            ry = int(1700 * scale_y)
+            rw = max(10, int(80 * scale_x))
+            rh = max(10, int(80 * scale_y))
         return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh, float(time_sec or 0.0))
 
     def apply_preset_gemini_11(video, time_sec):
