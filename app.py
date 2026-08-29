@@ -384,13 +384,13 @@ def process_watermark_removal(
                     last_yield_time = time.time()
                     yield gr.update(), status_msg
                 else:
-                    # Update for flow/propagation or initial setup logs
-                    if "[Flow]" in line_str or "Processing:" in line_str or time.time() - last_yield_time > 0.3:
+                    # Update for flow/propagation/ROI or initial setup logs
+                    if "[Flow]" in line_str or "[ROI]" in line_str or "Processing:" in line_str or time.time() - last_yield_time > 0.3:
                         last_yield_time = time.time()
                         status_msg = (
                             f"🚀 [3/4] ProPainter GPU 비디오 인페인팅 실행 중...\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                            f"⏳ {line_str if '[Flow]' in line_str else f'초기 Flow 계산 및 프레임 분석 중... (총 {frame_count} 프레임)'}\n"
+                            f"⏳ {line_str if ('[Flow]' in line_str or '[ROI]' in line_str) else f'초기 Flow 계산 및 프레임 분석 중... (총 {frame_count} 프레임)'}\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             f"📝 최근 실행 로그:\n{recent_logs}"
                         )

@@ -235,12 +235,59 @@ if __name__ == '__main__':
     if not os.path.exists(save_root):
         os.makedirs(save_root, exist_ok=True)
 
+    original_full_frames = [f.copy() for f in frames]
+    orig_w, orig_h = size
+    is_cropped_roi = False
+    crop_coords = None
+
     if args.mode == 'video_inpainting':
         frames_len = len(frames)
         flow_masks, masks_dilated = read_mask(args.mask, frames_len, size, 
                                               flow_mask_dilates=args.mask_dilation,
                                               mask_dilates=args.mask_dilation)
         w, h = size
+
+        # Check if the watermark is localized (< 45% of screen) to enable Smart ROI Inpainting
+        masks_np = [np.array(m) for m in masks_dilated]
+        combined_mask = np.maximum.reduce(masks_np)
+        pos = np.where(combined_mask > 0)
+        if len(pos[0]) > 0:
+            ymin, ymax = int(np.min(pos[0])), int(np.max(pos[0]))
+            xmin, xmax = int(np.min(pos[1])), int(np.max(pos[1]))
+            roi_w, roi_h = xmax - xmin + 1, ymax - ymin + 1
+            area_ratio = (roi_w * roi_h) / (w * h)
+
+            if area_ratio < 0.45:
+                pad_w = max(64, int(roi_w * 0.6))
+                pad_h = max(64, int(roi_h * 0.6))
+                c_xmin = max(0, xmin - pad_w)
+                c_xmax = min(w, xmax + pad_w)
+                c_ymin = max(0, ymin - pad_h)
+                c_ymax = min(h, ymax + pad_h)
+
+                cw = c_xmax - c_xmin
+                ch = c_ymax - c_ymin
+                cw += (16 - cw % 16) if cw % 16 != 0 else 0
+                ch += (16 - ch % 16) if ch % 16 != 0 else 0
+                c_xmax = min(w, c_xmin + cw)
+                c_xmin = max(0, c_xmax - cw)
+                c_ymax = min(h, c_ymin + ch)
+                c_ymin = max(0, c_ymax - ch)
+                cw = c_xmax - c_xmin
+                ch = c_ymax - c_ymin
+
+                crop_coords = (c_xmin, c_ymin, c_xmax, c_ymax)
+                is_cropped_roi = True
+
+                print(f"[ROI] Localized Watermark ROI detected: ({xmin},{ymin}) {roi_w}x{roi_h}", flush=True)
+                print(f"[ROI] Smart ROI Crop Inpainting: ({c_xmin},{c_ymin}) to ({c_xmax},{c_ymax}) -> {cw}x{ch}", flush=True)
+
+                frames = [Image.fromarray(np.array(f)[c_ymin:c_ymax, c_xmin:c_xmax]) for f in frames]
+                flow_masks = [Image.fromarray(np.array(m)[c_ymin:c_ymax, c_xmin:c_xmax]) for m in flow_masks]
+                masks_dilated = [Image.fromarray(np.array(m)[c_ymin:c_ymax, c_xmin:c_xmax]) for m in masks_dilated]
+                crop_masks_dilated_np = [np.array(m) for m in masks_dilated]
+                w, h = cw, ch
+
     elif args.mode == 'video_outpainting':
         assert args.scale_h is not None and args.scale_w is not None, 'Please provide a outpainting scale (s_h, s_w).'
         frames, flow_masks, masks_dilated, size = extrapolation(frames, (args.scale_h, args.scale_w))
@@ -483,6 +530,26 @@ if __name__ == '__main__':
         
         torch.cuda.empty_cache()
                 
+    # Seamlessly blend inpainted crop back into the original full-resolution frames
+    if is_cropped_roi:
+        c_xmin, c_ymin, c_xmax, c_ymax = crop_coords
+        final_full_frames = []
+        for idx in range(video_length):
+            inpainted_crop = comp_frames[idx]
+            full_frame = np.array(original_full_frames[idx]).copy()
+            crop_mask = crop_masks_dilated_np[idx]
+
+            # Gaussian blur for soft edge feather blending
+            mask_blur = cv2.GaussianBlur(crop_mask.astype(np.float32) / 255.0, (15, 15), 0)
+            mask_blur = np.expand_dims(mask_blur, axis=2)
+
+            orig_crop = full_frame[c_ymin:c_ymax, c_xmin:c_xmax].astype(np.float32)
+            blended = (inpainted_crop.astype(np.float32) * mask_blur + orig_crop * (1.0 - mask_blur)).astype(np.uint8)
+            full_frame[c_ymin:c_ymax, c_xmin:c_xmax] = blended
+            final_full_frames.append(full_frame)
+        comp_frames = final_full_frames
+        out_size = (orig_w, orig_h)
+
     # save each frame
     if args.save_frames:
         for idx in range(video_length):
@@ -493,10 +560,6 @@ if __name__ == '__main__':
             imwrite(f, img_save_root)
                     
 
-    # if args.mode == 'video_outpainting':
-    #     comp_frames = [i[10:-10,10:-10] for i in comp_frames]
-    #     masked_frame_for_save = [i[10:-10,10:-10] for i in masked_frame_for_save]
-    
     # save videos frame
     masked_frame_for_save = [cv2.resize(f, out_size) for f in masked_frame_for_save]
     comp_frames = [cv2.resize(f, out_size) for f in comp_frames]
