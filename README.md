@@ -14,6 +14,7 @@ A Windows-native utility to seamlessly remove static and dynamic watermarks (suc
 
 - **🎯 Interactive Visual ROI Selection (Mouse Drag & Draw)**:
   - **🖱️ Mouse Drag & Freehand Brush**: Drag and paint directly over the watermark on the video canvas with your mouse; coordinates and bounding boxes are automatically computed and synchronized.
+  - **⏱️ Timeline Frame Scrubber**: If the watermark is difficult to see due to the background color in the first frame, scrub the timeline slider or click quick jump buttons (0%, 25%, 50%, 75%, End) to load any clear frame onto the ROI canvas in real time.
   - **📐 Custom Precision Sliders**: Live bounding box overlay and pixel coordinate controls.
 - **⚡ One-Click Presets**:
   - Quick presets for **Gemini (1080p Bottom-Right)**, **Gemini (9:16 Shorts)**, **Gemini (1:1 Square)**, **Bottom-Right**, **Bottom-Left**, and **Top-Right**.

@@ -32,7 +32,6 @@ def get_clean_video_path(video_input: Any) -> Optional[str]:
         path = video_input.strip()
         return path if path and os.path.exists(path) else None
     if isinstance(video_input, dict):
-        # Gradio 5/6 returns dict: {'video': '/path/to/vid.mp4', 'subtitles': None} or {'path': '...'}
         path = video_input.get("video") or video_input.get("path") or video_input.get("name")
         if path and isinstance(path, str) and os.path.exists(path):
             return path.strip()
@@ -89,12 +88,18 @@ def get_video_info(video_input: Any) -> Tuple[int, int, float, int, float, str]:
     return width, height, fps, frame_count, duration, info_str
 
 
-def extract_first_frame(video_input: Any) -> Optional[np.ndarray]:
-    """Extract the first valid frame in RGB format."""
+def extract_frame_at_time(video_input: Any, time_sec: float = 0.0) -> Optional[np.ndarray]:
+    """Extract RGB frame at specified timestamp in seconds."""
     vpath = get_clean_video_path(video_input)
     if not vpath or not os.path.exists(vpath):
         return None
     cap = cv2.VideoCapture(vpath)
+    if not cap.isOpened():
+        return None
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    target_frame = max(0, min(int(time_sec * fps), frame_count - 1)) if frame_count > 0 else 0
+    cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
     ret, frame = cap.read()
     cap.release()
     if ret and frame is not None:
@@ -108,9 +113,10 @@ def generate_roi_preview(
     y: int,
     w: int,
     h: int,
+    time_sec: float = 0.0,
 ) -> Optional[np.ndarray]:
-    """Generate preview frame with highlighted watermark bounding box."""
-    frame_rgb = extract_first_frame(video_input)
+    """Generate preview frame with highlighted watermark bounding box at specified timestamp."""
+    frame_rgb = extract_frame_at_time(video_input, time_sec)
     if frame_rgb is None:
         frame_rgb = np.zeros((1080, 1920, 3), dtype=np.uint8)
 
@@ -133,7 +139,7 @@ def generate_roi_preview(
     cv2.rectangle(preview, (x, y), (x + w, y + h), (255, 40, 40), 2)
 
     # Draw coordinate label tag
-    label = f"Watermark ROI ({x},{y}) {w}x{h}"
+    label = f"ROI ({x},{y}) {w}x{h} @ {time_sec:.1f}s"
     (label_w, label_h), baseline = cv2.getTextSize(
         label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
     )
@@ -402,7 +408,7 @@ body {
     color: #e2e8f0;
 }
 .gradio-container {
-    max-width: 1350px !important;
+    max-width: 1380px !important;
     margin: 0 auto !important;
 }
 .header-badge {
@@ -422,6 +428,13 @@ body {
     margin-bottom: 10px;
     font-size: 0.9rem;
 }
+.timeline-card {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 10px;
+    margin-top: 8px;
+}
 """
 
 with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
@@ -435,11 +448,27 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
 
     # ------------------ TOP SECTION: Inputs (Side by Side) ------------------
     with gr.Row():
-        # Panel 1: Video Upload
+        # Panel 1: Video Upload & Timeline Scrubber
         with gr.Column(scale=1):
             gr.Markdown("### 1. Upload Video")
             input_video = gr.Video(label="Source Video", sources=["upload"])
             video_info_box = gr.Markdown("📁 Upload a video to view resolution and frames")
+
+            gr.Markdown("#### ⏱️ 영상 타임라인 프레임 선택 (Scrub Frame)")
+            gr.Markdown("<small>💡 배경색 때문에 워터마크가 안 보이면 타임라인을 이동해 선명한 장면의 프레임을 불러오세요.</small>")
+            slider_timestamp = gr.Slider(
+                label="타임라인 위치 (초 / Seconds)",
+                minimum=0.0,
+                maximum=10.0,
+                value=0.0,
+                step=0.1,
+            )
+            with gr.Row():
+                btn_time_0 = gr.Button("⏮️ 0초 (시작)", size="sm")
+                btn_time_25 = gr.Button("25%", size="sm")
+                btn_time_50 = gr.Button("50% (중간)", size="sm")
+                btn_time_75 = gr.Button("75%", size="sm")
+                btn_time_end = gr.Button("⏭️ 끝", size="sm")
 
         # Panel 2: Select Watermark ROI
         with gr.Column(scale=1):
@@ -463,7 +492,7 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
                     )
                     with gr.Row():
                         btn_sync_from_draw = gr.Button("🎯 마우스 영역 좌표 동기화", size="sm")
-                        btn_reset_frame = gr.Button("🔄 프레임 다시 불러오기", size="sm")
+                        btn_reset_frame = gr.Button("🔄 현재 타임라인 프레임 불러오기", size="sm")
 
                     chk_use_drawn_mask = gr.Checkbox(
                         label="마우스로 직접 칠한 정밀 마스크(Freehand Mask) 그대로 사용",
@@ -562,27 +591,29 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
                 interactive=False,
             )
 
-    # Event handlers:
+    # ------------------ Event Handlers ------------------
     def on_video_upload(video):
         vpath = get_clean_video_path(video)
         if not vpath:
-            return "No video uploaded", 1700, 950, 200, 100, None, None
+            return "No video uploaded", gr.update(maximum=10.0, value=0.0), 1700, 950, 200, 100, None, None
         w, h, fps, count, dur, info = get_video_info(vpath)
         default_w = int(w * 0.14)
         default_h = int(h * 0.08)
         default_x = w - default_w - int(w * 0.01)
         default_y = h - default_h - int(h * 0.02)
 
-        first_frame = extract_first_frame(vpath)
+        first_frame = extract_frame_at_time(vpath, 0.0)
         editor_init = {"background": first_frame, "layers": [], "composite": None}
-        box_preview = generate_roi_preview(vpath, default_x, default_y, default_w, default_h)
-        return info, default_x, default_y, default_w, default_h, editor_init, box_preview
+        box_preview = generate_roi_preview(vpath, default_x, default_y, default_w, default_h, 0.0)
+        time_slider_update = gr.update(maximum=max(0.1, round(dur, 2)), value=0.0)
+        return info, time_slider_update, default_x, default_y, default_w, default_h, editor_init, box_preview
 
     input_video.change(
         fn=on_video_upload,
         inputs=[input_video],
         outputs=[
             video_info_box,
+            slider_timestamp,
             slider_x,
             slider_y,
             slider_w,
@@ -592,20 +623,66 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
         ],
     )
 
-    # Reload frame to editor
-    def on_reload_frame(video):
+    # Timeline scrubber updates frame in both image_editor and preview_image
+    def on_timeline_change(video, time_sec, x, y, w, h):
         vpath = get_clean_video_path(video)
-        first_frame = extract_first_frame(vpath)
-        return {"background": first_frame, "layers": [], "composite": None}
+        if not vpath:
+            return gr.update(), gr.update()
+        frame = extract_frame_at_time(vpath, float(time_sec or 0.0))
+        editor_update = {"background": frame, "layers": [], "composite": None}
+        box_preview = generate_roi_preview(vpath, x, y, w, h, float(time_sec or 0.0))
+        return editor_update, box_preview
+
+    slider_timestamp.change(
+        fn=on_timeline_change,
+        inputs=[input_video, slider_timestamp, slider_x, slider_y, slider_w, slider_h],
+        outputs=[image_editor, preview_image],
+    )
+
+    # Quick Jump Buttons
+    def jump_0():
+        return 0.0
+
+    def jump_25(video):
+        vpath = get_clean_video_path(video)
+        _, _, _, _, dur, _ = get_video_info(vpath)
+        return round(dur * 0.25, 2)
+
+    def jump_50(video):
+        vpath = get_clean_video_path(video)
+        _, _, _, _, dur, _ = get_video_info(vpath)
+        return round(dur * 0.50, 2)
+
+    def jump_75(video):
+        vpath = get_clean_video_path(video)
+        _, _, _, _, dur, _ = get_video_info(vpath)
+        return round(dur * 0.75, 2)
+
+    def jump_end(video):
+        vpath = get_clean_video_path(video)
+        _, _, _, _, dur, _ = get_video_info(vpath)
+        return max(0.0, round(dur - 0.1, 2))
+
+    btn_time_0.click(fn=jump_0, outputs=[slider_timestamp])
+    btn_time_25.click(fn=jump_25, inputs=[input_video], outputs=[slider_timestamp])
+    btn_time_50.click(fn=jump_50, inputs=[input_video], outputs=[slider_timestamp])
+    btn_time_75.click(fn=jump_75, inputs=[input_video], outputs=[slider_timestamp])
+    btn_time_end.click(fn=jump_end, inputs=[input_video], outputs=[slider_timestamp])
+
+    # Reload frame button
+    def on_reload_frame(video, time_sec):
+        vpath = get_clean_video_path(video)
+        frame = extract_frame_at_time(vpath, float(time_sec or 0.0))
+        return {"background": frame, "layers": [], "composite": None}
 
     btn_reset_frame.click(
         fn=on_reload_frame,
-        inputs=[input_video],
+        inputs=[input_video, slider_timestamp],
         outputs=[image_editor],
     )
 
     # Sync coordinates from mouse-drawn layer
-    def on_mouse_draw_sync(video, editor):
+    def on_mouse_draw_sync(video, editor, time_sec):
         vpath = get_clean_video_path(video)
         if not vpath or not editor:
             return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
@@ -613,94 +690,94 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
         roi = extract_roi_from_editor(editor, w, h)
         if roi:
             rx, ry, rw, rh = roi
-            box_preview = generate_roi_preview(vpath, rx, ry, rw, rh)
+            box_preview = generate_roi_preview(vpath, rx, ry, rw, rh, float(time_sec or 0.0))
             return rx, ry, rw, rh, box_preview
         return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
     btn_sync_from_draw.click(
         fn=on_mouse_draw_sync,
-        inputs=[input_video, image_editor],
+        inputs=[input_video, image_editor, slider_timestamp],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
 
     # Coordinate update trigger preview
-    def on_coord_change(video, x, y, w, h):
+    def on_coord_change(video, x, y, w, h, time_sec):
         vpath = get_clean_video_path(video)
-        return generate_roi_preview(vpath, x, y, w, h)
+        return generate_roi_preview(vpath, x, y, w, h, float(time_sec or 0.0))
 
     for coord_elem in [slider_x, slider_y, slider_w, slider_h]:
         coord_elem.change(
             fn=on_coord_change,
-            inputs=[input_video, slider_x, slider_y, slider_w, slider_h],
+            inputs=[input_video, slider_x, slider_y, slider_w, slider_h, slider_timestamp],
             outputs=[preview_image],
         )
 
     # Presets
-    def apply_preset_gemini_1080p(video):
+    def apply_preset_gemini_1080p(video, time_sec):
         vpath = get_clean_video_path(video)
-        return 1700, 950, 200, 100, generate_roi_preview(vpath, 1700, 950, 200, 100)
+        return 1700, 950, 200, 100, generate_roi_preview(vpath, 1700, 950, 200, 100, float(time_sec or 0.0))
 
-    def apply_preset_gemini_916(video):
+    def apply_preset_gemini_916(video, time_sec):
         vpath = get_clean_video_path(video)
         w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.22), int(h * 0.05)
         rx, ry = w - rw - 15, h - rh - 25
-        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh)
+        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh, float(time_sec or 0.0))
 
-    def apply_preset_gemini_11(video):
+    def apply_preset_gemini_11(video, time_sec):
         vpath = get_clean_video_path(video)
         w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.18), int(h * 0.07)
         rx, ry = w - rw - 15, h - rh - 20
-        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh)
+        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh, float(time_sec or 0.0))
 
-    def apply_preset_br(video):
+    def apply_preset_br(video, time_sec):
         vpath = get_clean_video_path(video)
         w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.15), int(h * 0.1)
         rx, ry = w - rw - 10, h - rh - 10
-        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh)
+        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh, float(time_sec or 0.0))
 
-    def apply_preset_bl(video):
+    def apply_preset_bl(video, time_sec):
         vpath = get_clean_video_path(video)
         w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.15), int(h * 0.1)
-        return 10, h - rh - 10, rw, rh, generate_roi_preview(vpath, 10, h - rh - 10, rw, rh)
+        return 10, h - rh - 10, rw, rh, generate_roi_preview(vpath, 10, h - rh - 10, rw, rh, float(time_sec or 0.0))
 
-    def apply_preset_tr(video):
+    def apply_preset_tr(video, time_sec):
         vpath = get_clean_video_path(video)
         w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.15), int(h * 0.1)
-        return w - rw - 10, 10, rw, rh, generate_roi_preview(vpath, w - rw - 10, 10, rw, rh)
+        return w - rw - 10, 10, rw, rh, generate_roi_preview(vpath, w - rw - 10, 10, rw, rh, float(time_sec or 0.0))
 
     btn_preset_gemini_1080p.click(
         fn=apply_preset_gemini_1080p,
-        inputs=[input_video],
+        inputs=[input_video, slider_timestamp],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
     btn_preset_gemini_916.click(
         fn=apply_preset_gemini_916,
-        inputs=[input_video],
+        inputs=[input_video, slider_timestamp],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
     btn_preset_gemini_11.click(
         fn=apply_preset_gemini_11,
-        inputs=[input_video],
+        inputs=[input_video, slider_timestamp],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
     btn_preset_br.click(
         fn=apply_preset_br,
-        inputs=[input_video],
+        inputs=[input_video, slider_timestamp],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
     btn_preset_bl.click(
         fn=apply_preset_bl,
-        inputs=[input_video],
+        inputs=[input_video, slider_timestamp],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
     btn_preset_tr.click(
         fn=apply_preset_tr,
-        inputs=[input_video],
+        inputs=[input_video, slider_timestamp],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
 
