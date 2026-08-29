@@ -14,6 +14,6 @@ if not exist venv\Scripts\activate.bat (
     call venv\Scripts\activate.bat
 )
 
-echo Starting Watermark Remover Web UI...
-python app.py
+echo Starting Watermark Remover Web UI (using venv)...
+venv\Scripts\python.exe app.py
 pause
