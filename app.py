@@ -213,7 +213,7 @@ def process_watermark_removal(
         str(int(neighbor_length)),
         "--ref_stride",
         str(int(ref_stride)),
-        "--mask_dilates",
+        "--mask_dilation",
         str(int(mask_dilates)),
     ]
 
