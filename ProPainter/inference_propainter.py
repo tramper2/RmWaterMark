@@ -309,7 +309,7 @@ if __name__ == '__main__':
         else:
             short_clip_len = 2
         
-        # use fp32 for RAFT
+        # use fp32 for RAFT computation, but convert slices to FP16 and store on CPU during loop to save VRAM
         if frames.size(1) > short_clip_len:
             gt_flows_f_list, gt_flows_b_list = [], []
             for f in range(0, video_length, short_clip_len):
@@ -320,15 +320,28 @@ if __name__ == '__main__':
                 else:
                     flows_f, flows_b = fix_raft(frames[:,f-1:end_f], iters=args.raft_iter)
                 
-                gt_flows_f_list.append(flows_f)
-                gt_flows_b_list.append(flows_b)
+                if use_half:
+                    gt_flows_f_list.append(flows_f.half().cpu())
+                    gt_flows_b_list.append(flows_b.half().cpu())
+                else:
+                    gt_flows_f_list.append(flows_f.cpu())
+                    gt_flows_b_list.append(flows_b.cpu())
+                del flows_f, flows_b
                 torch.cuda.empty_cache()
                 
-            gt_flows_f = torch.cat(gt_flows_f_list, dim=1)
-            gt_flows_b = torch.cat(gt_flows_b_list, dim=1)
+            gt_flows_f = torch.cat(gt_flows_f_list, dim=1).to(device)
+            del gt_flows_f_list
+            torch.cuda.empty_cache()
+
+            gt_flows_b = torch.cat(gt_flows_b_list, dim=1).to(device)
+            del gt_flows_b_list
+            torch.cuda.empty_cache()
+
             gt_flows_bi = (gt_flows_f, gt_flows_b)
         else:
             gt_flows_bi = fix_raft(frames, iters=args.raft_iter)
+            if use_half:
+                gt_flows_bi = (gt_flows_bi[0].half(), gt_flows_bi[1].half())
             torch.cuda.empty_cache()
 
 
@@ -357,13 +370,20 @@ if __name__ == '__main__':
                     pred_flows_bi_sub, 
                     flow_masks[:, s_f:e_f+1])
 
-                pred_flows_f.append(pred_flows_bi_sub[0][:, pad_len_s:e_f-s_f-pad_len_e])
-                pred_flows_b.append(pred_flows_bi_sub[1][:, pad_len_s:e_f-s_f-pad_len_e])
+                pred_flows_f.append(pred_flows_bi_sub[0][:, pad_len_s:e_f-s_f-pad_len_e].cpu())
+                pred_flows_b.append(pred_flows_bi_sub[1][:, pad_len_s:e_f-s_f-pad_len_e].cpu())
+                del pred_flows_bi_sub
                 torch.cuda.empty_cache()
                 
-            pred_flows_f = torch.cat(pred_flows_f, dim=1)
-            pred_flows_b = torch.cat(pred_flows_b, dim=1)
-            pred_flows_bi = (pred_flows_f, pred_flows_b)
+            pred_flows_f_cat = torch.cat(pred_flows_f, dim=1).to(device)
+            del pred_flows_f
+            torch.cuda.empty_cache()
+
+            pred_flows_b_cat = torch.cat(pred_flows_b, dim=1).to(device)
+            del pred_flows_b
+            torch.cuda.empty_cache()
+
+            pred_flows_bi = (pred_flows_f_cat, pred_flows_b_cat)
         else:
             pred_flows_bi, _ = fix_flow_complete.forward_bidirect_flow(gt_flows_bi, flow_masks)
             pred_flows_bi = fix_flow_complete.combine_flow(gt_flows_bi, pred_flows_bi, flow_masks)
@@ -392,12 +412,21 @@ if __name__ == '__main__':
                                     prop_imgs_sub.view(b, t, 3, h, w) * masks_dilated[:, s_f:e_f]
                 updated_masks_sub = updated_local_masks_sub.view(b, t, 1, h, w)
                 
-                updated_frames.append(updated_frames_sub[:, pad_len_s:e_f-s_f-pad_len_e])
-                updated_masks.append(updated_masks_sub[:, pad_len_s:e_f-s_f-pad_len_e])
+                updated_frames.append(updated_frames_sub[:, pad_len_s:e_f-s_f-pad_len_e].cpu())
+                updated_masks.append(updated_masks_sub[:, pad_len_s:e_f-s_f-pad_len_e].cpu())
+                del updated_frames_sub, updated_masks_sub, prop_imgs_sub, updated_local_masks_sub
                 torch.cuda.empty_cache()
                 
-            updated_frames = torch.cat(updated_frames, dim=1)
-            updated_masks = torch.cat(updated_masks, dim=1)
+            updated_frames_cat = torch.cat(updated_frames, dim=1).to(device)
+            del updated_frames
+            torch.cuda.empty_cache()
+
+            updated_masks_cat = torch.cat(updated_masks, dim=1).to(device)
+            del updated_masks
+            torch.cuda.empty_cache()
+
+            updated_frames = updated_frames_cat
+            updated_masks = updated_masks_cat
         else:
             b, t, _, _, _ = masks_dilated.size()
             prop_imgs, updated_local_masks = model.img_propagation(masked_frames, pred_flows_bi, masks_dilated, 'nearest')
