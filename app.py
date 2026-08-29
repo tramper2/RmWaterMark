@@ -319,7 +319,11 @@ def process_watermark_removal(
 
         # Run subprocess with real-time unbuffered progress parsing
         log_lines = []
-        env = dict(os.environ, PYTHONUNBUFFERED="1")
+        env = dict(
+            os.environ,
+            PYTHONUNBUFFERED="1",
+            PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True",
+        )
         process = subprocess.Popen(
             cmd,
             cwd=str(PROPAINTER_DIR),
