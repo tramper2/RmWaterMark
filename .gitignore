@@ -1,0 +1,38 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Model Weights & Large files
+weights/
+*.pth
+*.pt
+*.onnx
+*.bin
+
+# Output results & temp files
+results/
+temp/
+scratch/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.png
+*.jpg
+*.jpeg
+!assets/
+!inputs/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

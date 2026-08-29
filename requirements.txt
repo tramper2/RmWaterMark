@@ -1,0 +1,25 @@
+# PyTorch (install with CUDA support via: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121)
+torch>=2.0.0
+torchvision>=0.15.0
+
+# ProPainter Dependencies
+av
+addict
+einops
+future
+numpy
+scipy
+opencv-python
+matplotlib
+scikit-image
+imageio
+imageio-ffmpeg
+pyyaml
+requests
+timm
+yapf
+
+# UI and Utilities
+gradio>=4.0.0
+Pillow
+tqdm
