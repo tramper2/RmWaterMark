@@ -12,11 +12,11 @@ A Windows-native utility to seamlessly remove static and dynamic watermarks (suc
 
 ## ✨ Key Features
 
-- **🎯 Interactive Visual ROI Preview**:
-  - Automatically loads the first frame of your video.
-  - Visual bounding box (red overlay + coordinate tags) updates live as you adjust coordinates.
+- **🎯 Interactive Visual ROI Selection (Mouse Drag & Draw)**:
+  - **🖱️ Mouse Drag & Freehand Brush**: Drag and paint directly over the watermark on the video canvas with your mouse; coordinates and bounding boxes are automatically computed and synchronized.
+  - **📐 Custom Precision Sliders**: Live bounding box overlay and pixel coordinate controls.
 - **⚡ One-Click Presets**:
-  - Quick presets for **Gemini (1080p Bottom-Right)**, **Gemini (720p Bottom-Right)**, **Bottom-Right**, **Bottom-Left**, and **Top-Right**.
+  - Quick presets for **Gemini (1080p Bottom-Right)**, **Gemini (9:16 Shorts)**, **Gemini (1:1 Square)**, **Bottom-Right**, **Bottom-Left**, and **Top-Right**.
 - **🚀 GPU-Accelerated FP16 Inpainting**:
   - Leverages ProPainter temporal flow completion & transformer inpainting with `--fp16` half precision.
   - Smooth execution on NVIDIA RTX GPUs (e.g. RTX 3080 / 40-series).
