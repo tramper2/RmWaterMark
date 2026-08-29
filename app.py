@@ -433,13 +433,16 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
         """
     )
 
+    # ------------------ TOP SECTION: Inputs (Side by Side) ------------------
     with gr.Row():
-        # Left column: Video Upload, ROI Selection (Mouse Drawing / Sliders)
-        with gr.Column(scale=6):
+        # Panel 1: Video Upload
+        with gr.Column(scale=1):
             gr.Markdown("### 1. Upload Video")
             input_video = gr.Video(label="Source Video", sources=["upload"])
             video_info_box = gr.Markdown("📁 Upload a video to view resolution and frames")
 
+        # Panel 2: Select Watermark ROI
+        with gr.Column(scale=1):
             gr.Markdown("### 2. Select Watermark ROI")
             with gr.Tabs() as roi_tabs:
                 with gr.TabItem("🖱️ 마우스 드래그 / 브러시 칠하기 (Mouse Draw)", id="tab_draw"):
@@ -447,7 +450,7 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
                         """
                         <div class="instruction-box">
                         💡 <b>사용법:</b> 마우스로 영상 프레임 위의 워터마크 영역을 <b>드래그하여 칠하세요</b>.<br>
-                        칠한 후 바로 아래 <b>🚀 Start Watermark Removal</b> 버튼을 누르면 해당 영역이 제거됩니다.
+                        칠한 후 아래 <b>🚀 Start Watermark Removal</b> 버튼을 누르면 해당 영역이 제거됩니다.
                         </div>
                         """
                     )
@@ -459,7 +462,7 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
                         interactive=True,
                     )
                     with gr.Row():
-                        btn_sync_from_draw = gr.Button("🎯 마우스로 칠한 영역 좌표로 변환", size="sm")
+                        btn_sync_from_draw = gr.Button("🎯 마우스 영역 좌표 동기화", size="sm")
                         btn_reset_frame = gr.Button("🔄 프레임 다시 불러오기", size="sm")
 
                     chk_use_drawn_mask = gr.Checkbox(
@@ -492,61 +495,70 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
                         type="numpy",
                     )
 
-            with gr.Accordion("⚙️ Advanced Optimization Settings (VRAM / Memory)", open=False):
-                slider_subvideo = gr.Slider(
-                    label="Subvideo Length (Frames)",
-                    minimum=20,
-                    maximum=120,
-                    value=80,
-                    step=10,
-                    info="Lower to 40-50 if encountering VRAM issues on long videos",
-                )
-                slider_neighbor = gr.Slider(
-                    label="Neighbor Length",
-                    minimum=4,
-                    maximum=20,
-                    value=10,
-                    step=2,
-                )
-                slider_ref_stride = gr.Slider(
-                    label="Reference Stride",
-                    minimum=5,
-                    maximum=20,
-                    value=10,
-                    step=1,
-                )
-                slider_mask_dilates = gr.Slider(
-                    label="Mask Dilation (Pixels)",
-                    minimum=0,
-                    maximum=15,
-                    value=5,
-                    step=1,
-                    info="Expands mask boundary slightly to eliminate border artifacts",
-                )
-                slider_resize = gr.Slider(
-                    label="Resize Ratio",
-                    minimum=0.25,
-                    maximum=1.0,
-                    value=1.0,
-                    step=0.05,
-                    info="Scale down 4K videos if needed",
-                )
-                chk_fp16 = gr.Checkbox(
-                    label="Enable FP16 (Half Precision)",
-                    value=True,
-                    info="Saves substantial VRAM with identical quality",
-                )
+    # ------------------ MIDDLE SECTION: Settings & Start Button ------------------
+    with gr.Accordion("⚙️ Advanced Optimization Settings (VRAM / Memory)", open=False):
+        with gr.Row():
+            slider_subvideo = gr.Slider(
+                label="Subvideo Length (Frames)",
+                minimum=20,
+                maximum=120,
+                value=80,
+                step=10,
+                info="Lower to 40-50 if encountering VRAM issues on long videos",
+            )
+            slider_neighbor = gr.Slider(
+                label="Neighbor Length",
+                minimum=4,
+                maximum=20,
+                value=10,
+                step=2,
+            )
+            slider_ref_stride = gr.Slider(
+                label="Reference Stride",
+                minimum=5,
+                maximum=20,
+                value=10,
+                step=1,
+            )
+        with gr.Row():
+            slider_mask_dilates = gr.Slider(
+                label="Mask Dilation (Pixels)",
+                minimum=0,
+                maximum=15,
+                value=5,
+                step=1,
+                info="Expands mask boundary slightly to eliminate border artifacts",
+            )
+            slider_resize = gr.Slider(
+                label="Resize Ratio",
+                minimum=0.25,
+                maximum=1.0,
+                value=1.0,
+                step=0.05,
+                info="Scale down 4K videos if needed",
+            )
+            chk_fp16 = gr.Checkbox(
+                label="Enable FP16 (Half Precision)",
+                value=True,
+                info="Saves substantial VRAM with identical quality",
+            )
 
-            btn_start = gr.Button("🚀 Start Watermark Removal", variant="primary", size="lg")
+    btn_start = gr.Button("🚀 Start Watermark Removal", variant="primary", size="lg")
 
-        # Right column: Output Video & Real-time Logs
-        with gr.Column(scale=6):
+    # ------------------ BOTTOM SECTION: Outputs (Side by Side) ------------------
+    with gr.Row():
+        # Panel 3: Inpainted Output Video
+        with gr.Column(scale=1):
             gr.Markdown("### 3. Inpainted Output Video (with Synchronized Audio)")
             output_video = gr.Video(label="Processed Result Video", interactive=False)
+
+        # Panel 4: Status & Execution Log
+        with gr.Column(scale=1):
+            gr.Markdown("### 4. Status & Execution Log")
             status_box = gr.Textbox(
-                label="Status & Execution Log",
-                value="Ready. Upload a video, drag/set watermark region, and click Start.",
-                lines=7,
+                label="Execution Log",
+                value="Ready. Upload a video, set watermark region, and click Start.",
+                lines=12,
                 interactive=False,
             )
 
