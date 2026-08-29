@@ -313,6 +313,7 @@ if __name__ == '__main__':
             gt_flows_f_list, gt_flows_b_list = [], []
             for f in range(0, video_length, short_clip_len):
                 end_f = min(video_length, f + short_clip_len)
+                print(f"[Flow] Flow 계산 중: {end_f}/{video_length} frames...", flush=True)
                 if f == 0:
                     flows_f, flows_b = fix_raft(frames[:,f:end_f], iters=args.raft_iter)
                 else:
@@ -414,7 +415,8 @@ if __name__ == '__main__':
         ref_num = -1
     
     # ---- feature propagation + transformer ----
-    for f in tqdm(range(0, video_length, neighbor_stride)):
+    for f in tqdm(range(0, video_length, neighbor_stride), file=sys.stdout, dynamic_ncols=True):
+        sys.stdout.flush()
         neighbor_ids = [
             i for i in range(max(0, f - neighbor_stride),
                                 min(video_length, f + neighbor_stride + 1))

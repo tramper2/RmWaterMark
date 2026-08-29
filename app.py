@@ -290,9 +290,10 @@ def process_watermark_removal(
             yield gr.update(), f"❌ ProPainter 스크립트가 없습니다: {propainter_script}"
             return
 
-        # Build ProPainter command
+        # Build ProPainter command with unbuffered flag (-u)
         cmd = [
             sys.executable,
+            "-u",
             str(propainter_script),
             "--video",
             str(vpath),
@@ -316,21 +317,22 @@ def process_watermark_removal(
         if fp16 and torch.cuda.is_available():
             cmd.append("--fp16")
 
-        # Run subprocess with real-time progress parsing
+        # Run subprocess with real-time unbuffered progress parsing
         log_lines = []
+        env = dict(os.environ, PYTHONUNBUFFERED="1")
         process = subprocess.Popen(
             cmd,
             cwd=str(PROPAINTER_DIR),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            bufsize=1,
+            bufsize=0,
+            env=env,
             universal_newlines=True,
         )
 
         import re
         buffer = ""
-        current_frame_text = f"0 / {frame_count} 프레임 (준비 중...)"
         last_yield_time = time.time()
 
         while True:
@@ -378,13 +380,13 @@ def process_watermark_removal(
                     last_yield_time = time.time()
                     yield gr.update(), status_msg
                 else:
-                    # Update periodically for non-tqdm logs (e.g. optical flow setup)
-                    if time.time() - last_yield_time > 0.5:
+                    # Update for flow/propagation or initial setup logs
+                    if "[Flow]" in line_str or "Processing:" in line_str or time.time() - last_yield_time > 0.3:
                         last_yield_time = time.time()
                         status_msg = (
                             f"🚀 [3/4] ProPainter GPU 비디오 인페인팅 실행 중...\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                            f"⏳ 초기 Flow 계산 및 프레임 분석 중... (총 {frame_count} 프레임)\n"
+                            f"⏳ {line_str if '[Flow]' in line_str else f'초기 Flow 계산 및 프레임 분석 중... (총 {frame_count} 프레임)'}\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             f"📝 최근 실행 로그:\n{recent_logs}"
                         )
