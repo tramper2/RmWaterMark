@@ -353,13 +353,14 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
             input_video = gr.Video(label="Source Video", sources=["upload"])
             video_info_box = gr.Markdown("📁 Upload a video to view resolution and frames")
 
-            gr.Markdown("#### 🎯 Quick Preset Regions")
+            gr.Markdown("#### 🎯 Quick Presets by Aspect Ratio & Position")
             with gr.Row():
-                btn_preset_gemini_1080p = gr.Button("Gemini (1080p Bottom-Right)", size="sm")
-                btn_preset_gemini_720p = gr.Button("Gemini (720p Bottom-Right)", size="sm")
-                btn_preset_br = gr.Button("Bottom-Right (General)", size="sm")
-                btn_preset_bl = gr.Button("Bottom-Left", size="sm")
-                btn_preset_tr = gr.Button("Top-Right", size="sm")
+                btn_preset_gemini_1080p = gr.Button("🖥️ 16:9 (1080p BR)", size="sm")
+                btn_preset_gemini_916 = gr.Button("📱 9:16 (Shorts BR)", size="sm")
+                btn_preset_gemini_11 = gr.Button("🔲 1:1 (Square BR)", size="sm")
+                btn_preset_br = gr.Button("📍 Auto BR (Any Ratio)", size="sm")
+                btn_preset_bl = gr.Button("📍 Auto BL", size="sm")
+                btn_preset_tr = gr.Button("📍 Auto TR", size="sm")
 
             gr.Markdown("#### 📐 Watermark Bounding Box (Pixels)")
             with gr.Row():
@@ -468,8 +469,17 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
     def apply_preset_gemini_1080p(video):
         return 1700, 950, 200, 100, generate_roi_preview(video, 1700, 950, 200, 100)
 
-    def apply_preset_gemini_720p(video):
-        return 1120, 630, 150, 75, generate_roi_preview(video, 1120, 630, 150, 75)
+    def apply_preset_gemini_916(video):
+        w, h, _, _, _, _ = get_video_info(video)
+        rw, rh = int(w * 0.22), int(h * 0.05)
+        rx, ry = w - rw - 15, h - rh - 25
+        return rx, ry, rw, rh, generate_roi_preview(video, rx, ry, rw, rh)
+
+    def apply_preset_gemini_11(video):
+        w, h, _, _, _, _ = get_video_info(video)
+        rw, rh = int(w * 0.18), int(h * 0.07)
+        rx, ry = w - rw - 15, h - rh - 20
+        return rx, ry, rw, rh, generate_roi_preview(video, rx, ry, rw, rh)
 
     def apply_preset_br(video):
         w, h, _, _, _, _ = get_video_info(video)
@@ -492,8 +502,13 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
         inputs=[input_video],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
-    btn_preset_gemini_720p.click(
-        fn=apply_preset_gemini_720p,
+    btn_preset_gemini_916.click(
+        fn=apply_preset_gemini_916,
+        inputs=[input_video],
+        outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
+    )
+    btn_preset_gemini_11.click(
+        fn=apply_preset_gemini_11,
         inputs=[input_video],
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
