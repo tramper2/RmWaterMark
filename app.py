@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from typing import Generator, Optional, Tuple, Dict, Any
 
@@ -21,6 +22,28 @@ if str(PROPAINTER_DIR) not in sys.path:
 
 # Ensure model weights are present
 from download_weights import ensure_weights
+
+
+def get_clean_video_path(video_input: Any) -> Optional[str]:
+    """Safely extract valid filesystem path string from any Gradio video input representation."""
+    if video_input is None:
+        return None
+    if isinstance(video_input, str):
+        path = video_input.strip()
+        return path if path and os.path.exists(path) else None
+    if isinstance(video_input, dict):
+        # Gradio 5/6 returns dict: {'video': '/path/to/vid.mp4', 'subtitles': None} or {'path': '...'}
+        path = video_input.get("video") or video_input.get("path") or video_input.get("name")
+        if path and isinstance(path, str) and os.path.exists(path):
+            return path.strip()
+        return None
+    if hasattr(video_input, "name") and isinstance(video_input.name, str) and os.path.exists(video_input.name):
+        return video_input.name
+    if hasattr(video_input, "path") and isinstance(video_input.path, str) and os.path.exists(video_input.path):
+        return video_input.path
+    if isinstance(video_input, (list, tuple)) and len(video_input) > 0:
+        return get_clean_video_path(video_input[0])
+    return None
 
 
 def check_ffmpeg() -> bool:
@@ -45,12 +68,13 @@ def get_gpu_info() -> str:
     return "🟡 Running on CPU (CUDA not detected)"
 
 
-def get_video_info(video_path: Optional[str]) -> Tuple[int, int, float, int, float, str]:
+def get_video_info(video_input: Any) -> Tuple[int, int, float, int, float, str]:
     """Extract width, height, fps, total_frames, duration_sec, formatted_info."""
-    if not video_path or not os.path.exists(video_path):
+    vpath = get_clean_video_path(video_input)
+    if not vpath or not os.path.exists(vpath):
         return 1920, 1080, 30.0, 0, 0.0, "No video loaded"
 
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(vpath)
     if not cap.isOpened():
         return 1920, 1080, 30.0, 0, 0.0, "Unable to read video"
 
@@ -65,11 +89,12 @@ def get_video_info(video_path: Optional[str]) -> Tuple[int, int, float, int, flo
     return width, height, fps, frame_count, duration, info_str
 
 
-def extract_first_frame(video_path: Optional[str]) -> Optional[np.ndarray]:
+def extract_first_frame(video_input: Any) -> Optional[np.ndarray]:
     """Extract the first valid frame in RGB format."""
-    if not video_path or not os.path.exists(video_path):
+    vpath = get_clean_video_path(video_input)
+    if not vpath or not os.path.exists(vpath):
         return None
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(vpath)
     ret, frame = cap.read()
     cap.release()
     if ret and frame is not None:
@@ -78,14 +103,14 @@ def extract_first_frame(video_path: Optional[str]) -> Optional[np.ndarray]:
 
 
 def generate_roi_preview(
-    video_path: Optional[str],
+    video_input: Any,
     x: int,
     y: int,
     w: int,
     h: int,
 ) -> Optional[np.ndarray]:
     """Generate preview frame with highlighted watermark bounding box."""
-    frame_rgb = extract_first_frame(video_path)
+    frame_rgb = extract_first_frame(video_input)
     if frame_rgb is None:
         frame_rgb = np.zeros((1080, 1920, 3), dtype=np.uint8)
 
@@ -147,7 +172,12 @@ def extract_mask_from_editor(editor_data: Any, expected_w: int, expected_h: int)
     for layer in layers:
         if layer is None:
             continue
-        # Resize layer to expected resolution if needed
+        if isinstance(layer, Image.Image):
+            layer = np.array(layer)
+        elif not isinstance(layer, np.ndarray):
+            layer = np.array(layer)
+
+        # Resize layer if canvas scale differs
         if layer.shape[0] != expected_h or layer.shape[1] != expected_w:
             layer = cv2.resize(layer, (expected_w, expected_h), interpolation=cv2.INTER_NEAREST)
 
@@ -161,6 +191,9 @@ def extract_mask_from_editor(editor_data: Any, expected_w: int, expected_h: int)
             combined = np.maximum(combined, (layer > 10).astype(np.uint8) * 255)
 
     if np.any(combined > 0):
+        # Slightly dilate freehand strokes to ensure solid mask
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        combined = cv2.dilate(combined, kernel, iterations=1)
         return combined
     return None
 
@@ -191,7 +224,7 @@ def create_binary_mask(width: int, height: int, x: int, y: int, w: int, h: int, 
 
 
 def process_watermark_removal(
-    video_path: Optional[str],
+    video_input: Any,
     editor_data: Any,
     use_drawn_mask: bool,
     x: int,
@@ -205,78 +238,80 @@ def process_watermark_removal(
     mask_dilates: int = 5,
     fp16: bool = True,
     progress=gr.Progress(track_tqdm=True),
-) -> Generator[Tuple[Optional[str], str], None, None]:
+) -> Generator[Tuple[Any, str], None, None]:
     """Execute ProPainter inpainting and merge original audio using FFmpeg."""
-    if not video_path or not os.path.exists(video_path):
-        yield None, "❌ Please upload a video file first."
-        return
-
-    if not check_ffmpeg():
-        yield None, "❌ FFmpeg not found. Please ensure FFmpeg is installed and added to PATH."
-        return
-
-    yield None, "⏳ Step 1/4: Checking and ensuring ProPainter model weights..."
-    if not ensure_weights():
-        yield None, "❌ Model weights check failed. Please check internet connection."
-        return
-
-    # Extract video info
-    width, height, fps, frame_count, duration, info_str = get_video_info(video_path)
-    yield None, f"📊 Video Info: {info_str}\n⏳ Step 2/4: Generating mask..."
-
-    # Setup directories
-    workspace_dir = BASE_DIR / "temp" / f"task_{int(time.time())}"
-    workspace_dir.mkdir(parents=True, exist_ok=True)
-    mask_path = workspace_dir / "mask.png"
-    results_dir = BASE_DIR / "results"
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    # Check if we should use direct freehand drawn mask from ImageEditor
-    drawn_mask = extract_mask_from_editor(editor_data, width, height) if use_drawn_mask else None
-    if drawn_mask is not None:
-        cv2.imwrite(str(mask_path), drawn_mask)
-        yield None, "🎨 Using custom mouse-drawn mask for watermark removal..."
-    else:
-        # Create rectangular binary mask from coordinates
-        create_binary_mask(width, height, x, y, w, h, mask_path)
-        yield None, f"📐 Using bounding box mask ROI: X={x}, Y={y}, W={w}, H={h}..."
-
-    yield None, "🚀 Step 3/4: Starting ProPainter video inpainting on GPU..."
-
-    propainter_script = PROPAINTER_DIR / "inference_propainter.py"
-    if not propainter_script.exists():
-        yield None, f"❌ ProPainter script not found at {propainter_script}"
-        return
-
-    # Build ProPainter command with correct CLI argument --mask_dilation
-    cmd = [
-        sys.executable,
-        str(propainter_script),
-        "--video",
-        str(video_path),
-        "--mask",
-        str(mask_path),
-        "--output",
-        str(workspace_dir / "out"),
-        "--subvideo_length",
-        str(int(subvideo_length)),
-        "--neighbor_length",
-        str(int(neighbor_length)),
-        "--ref_stride",
-        str(int(ref_stride)),
-        "--mask_dilation",
-        str(int(mask_dilates)),
-    ]
-
-    if resize_ratio != 1.0:
-        cmd.extend(["--resize_ratio", str(float(resize_ratio))])
-
-    if fp16 and torch.cuda.is_available():
-        cmd.append("--fp16")
-
-    # Run subprocess
-    log_lines = []
     try:
+        vpath = get_clean_video_path(video_input)
+        if not vpath or not os.path.exists(vpath):
+            yield gr.update(), "❌ 동영상 파일을 먼저 업로드해 주세요. (Video not found)"
+            return
+
+        if not check_ffmpeg():
+            yield gr.update(), "❌ FFmpeg를 찾을 수 없습니다. 시스템 PATH를 확인해 주세요."
+            return
+
+        yield gr.update(), "⏳ [1/4] ProPainter 사전 학습 가중치를 확인하는 중..."
+        if not ensure_weights():
+            yield gr.update(), "❌ 모델 가중치 다운로드에 실패했습니다. 인터넷 연결을 확인해 주세요."
+            return
+
+        # Extract video info
+        width, height, fps, frame_count, duration, info_str = get_video_info(vpath)
+        yield gr.update(), f"📊 동영상 정보: {info_str}\n⏳ [2/4] 워터마크 마스크 생성 중..."
+
+        # Setup directories
+        task_id = int(time.time() * 1000)
+        workspace_dir = BASE_DIR / "temp" / f"task_{task_id}"
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        mask_path = workspace_dir / "mask.png"
+        results_dir = BASE_DIR / "results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Check if user painted on ImageEditor
+        drawn_mask = extract_mask_from_editor(editor_data, width, height) if use_drawn_mask else None
+        if drawn_mask is not None and np.any(drawn_mask > 0):
+            cv2.imwrite(str(mask_path), drawn_mask)
+            yield gr.update(), f"📊 {info_str}\n🎨 마우스로 직접 칠한 정밀 마스크 적용 중..."
+        else:
+            # Fallback to rectangular ROI box
+            create_binary_mask(width, height, x, y, w, h, mask_path)
+            yield gr.update(), f"📊 {info_str}\n📐 사각형 ROI 마스크 적용 중 (X={x}, Y={y}, W={w}, H={h})..."
+
+        yield gr.update(), "🚀 [3/4] ProPainter GPU 비디오 인페인팅 실행 중..."
+
+        propainter_script = PROPAINTER_DIR / "inference_propainter.py"
+        if not propainter_script.exists():
+            yield gr.update(), f"❌ ProPainter 스크립트가 없습니다: {propainter_script}"
+            return
+
+        # Build ProPainter command
+        cmd = [
+            sys.executable,
+            str(propainter_script),
+            "--video",
+            str(vpath),
+            "--mask",
+            str(mask_path),
+            "--output",
+            str(workspace_dir / "out"),
+            "--subvideo_length",
+            str(int(subvideo_length)),
+            "--neighbor_length",
+            str(int(neighbor_length)),
+            "--ref_stride",
+            str(int(ref_stride)),
+            "--mask_dilation",
+            str(int(mask_dilates)),
+        ]
+
+        if resize_ratio != 1.0:
+            cmd.extend(["--resize_ratio", str(float(resize_ratio))])
+
+        if fp16 and torch.cuda.is_available():
+            cmd.append("--fp16")
+
+        # Run subprocess
+        log_lines = []
         process = subprocess.Popen(
             cmd,
             cwd=str(PROPAINTER_DIR),
@@ -291,71 +326,73 @@ def process_watermark_removal(
             line_str = line.strip()
             if line_str:
                 log_lines.append(line_str)
-                recent_logs = "\n".join(log_lines[-15:])
-                yield None, f"🤖 ProPainter Inpainting Running...\n{recent_logs}"
+                recent_logs = "\n".join(log_lines[-12:])
+                yield gr.update(), f"🤖 ProPainter GPU 인페인팅 진행 중...\n{recent_logs}"
 
         process.stdout.close()
         return_code = process.wait()
         if return_code != 0:
-            yield None, f"❌ ProPainter execution failed (code {return_code}):\n" + "\n".join(log_lines[-20:])
+            yield gr.update(), f"❌ ProPainter 실행 실패 (코드 {return_code}):\n" + "\n".join(log_lines[-20:])
             return
+
+        # Look for inpainted output video in workspace_dir / out
+        out_dir = workspace_dir / "out"
+        inpainted_files = list(out_dir.rglob("inpaint_out.mp4")) or list(out_dir.rglob("*.mp4"))
+        if not inpainted_files:
+            yield gr.update(), f"❌ 인페인팅 결과 비디오 파일을 찾을 수 없습니다: {out_dir}"
+            return
+
+        inpainted_video = inpainted_files[0]
+        yield gr.update(), f"🎵 [4/4] FFmpeg를 통해 원본 오디오 스트림을 보존 및 병합하는 중..."
+
+        # Target final output file in results/
+        video_stem = Path(vpath).stem
+        final_output_path = results_dir / f"{video_stem}_nowatermark_{task_id}.mp4"
+
+        # Merge audio
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(inpainted_video),
+            "-i",
+            str(vpath),
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0?",
+            str(final_output_path),
+        ]
+
+        try:
+            subprocess.run(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as err:
+            shutil.copyfile(inpainted_video, final_output_path)
+            yield str(final_output_path), f"⚠️ 비디오 생성 완료 (오디오 병합 경고): {err.stderr}"
+            return
+
+        # Clean up temporary workspace
+        try:
+            shutil.rmtree(workspace_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+        yield str(final_output_path), f"✅ 워터마크 제거 완료!\n📁 저장 위치: results/{final_output_path.name}"
+
     except Exception as e:
-        yield None, f"❌ ProPainter execution error: {e}"
-        return
-
-    # Look for inpainted output video in workspace_dir / out
-    out_dir = workspace_dir / "out"
-    inpainted_files = list(out_dir.rglob("inpaint_out.mp4")) or list(out_dir.rglob("*.mp4"))
-    if not inpainted_files:
-        yield None, f"❌ Inpainted output file not found in {out_dir}"
-        return
-
-    inpainted_video = inpainted_files[0]
-    yield None, f"🎵 Step 4/4: Preserving original audio stream using FFmpeg..."
-
-    # Target final output file in results/
-    video_stem = Path(video_path).stem
-    final_output_path = results_dir / f"{video_stem}_nowatermark_{int(time.time())}.mp4"
-
-    # Merge audio:
-    ffmpeg_cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(inpainted_video),
-        "-i",
-        str(video_path),
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0?",
-        str(final_output_path),
-    ]
-
-    try:
-        subprocess.run(
-            ffmpeg_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as err:
-        shutil.copyfile(inpainted_video, final_output_path)
-        yield str(final_output_path), f"⚠️ Video generated, but audio merge had a warning: {err.stderr}"
-        return
-
-    # Clean up workspace
-    try:
-        shutil.rmtree(workspace_dir, ignore_errors=True)
-    except Exception:
-        pass
-
-    yield str(final_output_path), f"✅ Watermark removal complete! Saved to:\n{final_output_path.name}"
+        err_msg = traceback.format_exc()
+        print("ERROR in process_watermark_removal:\n", err_msg)
+        yield gr.update(), f"❌ 처리 중 오류 발생:\n{e}\n\n{err_msg}"
 
 
 # Gradio UI Theme & CSS
@@ -405,30 +442,30 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
 
             gr.Markdown("### 2. Select Watermark ROI")
             with gr.Tabs() as roi_tabs:
-                with gr.TabItem("🖱️ 마우스로 직접 드래그 / 브러시 칠하기 (Mouse Draw)", id="tab_draw"):
+                with gr.TabItem("🖱️ 마우스 드래그 / 브러시 칠하기 (Mouse Draw)", id="tab_draw"):
                     gr.Markdown(
                         """
                         <div class="instruction-box">
                         💡 <b>사용법:</b> 마우스로 영상 프레임 위의 워터마크 영역을 <b>드래그하여 칠하세요</b>.<br>
-                        칠하는 즉시 워터마크 영역의 좌표가 자동 감지되어 동기화됩니다.
+                        칠한 후 바로 아래 <b>🚀 Start Watermark Removal</b> 버튼을 누르면 해당 영역이 제거됩니다.
                         </div>
                         """
                     )
                     image_editor = gr.ImageEditor(
-                        label="Watermark Brush Canvas (Drag / Paint over watermark)",
+                        label="Watermark Brush Canvas",
                         type="numpy",
                         brush=gr.Brush(default_size=25, colors=["#ff3333", "#ffffff", "#00ff00"], default_color="#ff3333"),
                         eraser=gr.Eraser(default_size=25),
                         interactive=True,
                     )
                     with gr.Row():
-                        btn_sync_from_draw = gr.Button("🎯 마우스로 칠한 영역 좌표로 변환", size="sm", variant="secondary")
+                        btn_sync_from_draw = gr.Button("🎯 마우스로 칠한 영역 좌표로 변환", size="sm")
                         btn_reset_frame = gr.Button("🔄 프레임 다시 불러오기", size="sm")
 
                     chk_use_drawn_mask = gr.Checkbox(
                         label="마우스로 직접 칠한 정밀 마스크(Freehand Mask) 그대로 사용",
                         value=True,
-                        info="체크 시 마우스로 칠한 정밀 모양 마스크가 적용되며, 해제 시 외곽 사각형(Bounding Box) 영역이 적용됩니다.",
+                        info="체크 시 마우스로 칠한 모양 그대로 정밀 적용됩니다.",
                     )
 
                 with gr.TabItem("📐 정밀 좌표 슬라이더 & 프리셋 (Sliders & Presets)", id="tab_sliders"):
@@ -515,18 +552,18 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
 
     # Event handlers:
     def on_video_upload(video):
-        if not video:
+        vpath = get_clean_video_path(video)
+        if not vpath:
             return "No video uploaded", 1700, 950, 200, 100, None, None
-        w, h, fps, count, dur, info = get_video_info(video)
-        # Default Gemini watermark position for detected resolution
+        w, h, fps, count, dur, info = get_video_info(vpath)
         default_w = int(w * 0.14)
         default_h = int(h * 0.08)
         default_x = w - default_w - int(w * 0.01)
         default_y = h - default_h - int(h * 0.02)
 
-        first_frame = extract_first_frame(video)
+        first_frame = extract_first_frame(vpath)
         editor_init = {"background": first_frame, "layers": [], "composite": None}
-        box_preview = generate_roi_preview(video, default_x, default_y, default_w, default_h)
+        box_preview = generate_roi_preview(vpath, default_x, default_y, default_w, default_h)
         return info, default_x, default_y, default_w, default_h, editor_init, box_preview
 
     input_video.change(
@@ -545,7 +582,8 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
 
     # Reload frame to editor
     def on_reload_frame(video):
-        first_frame = extract_first_frame(video)
+        vpath = get_clean_video_path(video)
+        first_frame = extract_first_frame(vpath)
         return {"background": first_frame, "layers": [], "composite": None}
 
     btn_reset_frame.click(
@@ -556,13 +594,14 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
 
     # Sync coordinates from mouse-drawn layer
     def on_mouse_draw_sync(video, editor):
-        if not video or not editor:
+        vpath = get_clean_video_path(video)
+        if not vpath or not editor:
             return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-        w, h, _, _, _, _ = get_video_info(video)
+        w, h, _, _, _, _ = get_video_info(vpath)
         roi = extract_roi_from_editor(editor, w, h)
         if roi:
             rx, ry, rw, rh = roi
-            box_preview = generate_roi_preview(video, rx, ry, rw, rh)
+            box_preview = generate_roi_preview(vpath, rx, ry, rw, rh)
             return rx, ry, rw, rh, box_preview
         return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
@@ -572,15 +611,10 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
         outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
     )
 
-    image_editor.change(
-        fn=on_mouse_draw_sync,
-        inputs=[input_video, image_editor],
-        outputs=[slider_x, slider_y, slider_w, slider_h, preview_image],
-    )
-
     # Coordinate update trigger preview
     def on_coord_change(video, x, y, w, h):
-        return generate_roi_preview(video, x, y, w, h)
+        vpath = get_clean_video_path(video)
+        return generate_roi_preview(vpath, x, y, w, h)
 
     for coord_elem in [slider_x, slider_y, slider_w, slider_h]:
         coord_elem.change(
@@ -591,35 +625,41 @@ with gr.Blocks(title="AI Video Watermark Remover (ProPainter)") as demo:
 
     # Presets
     def apply_preset_gemini_1080p(video):
-        return 1700, 950, 200, 100, generate_roi_preview(video, 1700, 950, 200, 100)
+        vpath = get_clean_video_path(video)
+        return 1700, 950, 200, 100, generate_roi_preview(vpath, 1700, 950, 200, 100)
 
     def apply_preset_gemini_916(video):
-        w, h, _, _, _, _ = get_video_info(video)
+        vpath = get_clean_video_path(video)
+        w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.22), int(h * 0.05)
         rx, ry = w - rw - 15, h - rh - 25
-        return rx, ry, rw, rh, generate_roi_preview(video, rx, ry, rw, rh)
+        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh)
 
     def apply_preset_gemini_11(video):
-        w, h, _, _, _, _ = get_video_info(video)
+        vpath = get_clean_video_path(video)
+        w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.18), int(h * 0.07)
         rx, ry = w - rw - 15, h - rh - 20
-        return rx, ry, rw, rh, generate_roi_preview(video, rx, ry, rw, rh)
+        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh)
 
     def apply_preset_br(video):
-        w, h, _, _, _, _ = get_video_info(video)
+        vpath = get_clean_video_path(video)
+        w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.15), int(h * 0.1)
         rx, ry = w - rw - 10, h - rh - 10
-        return rx, ry, rw, rh, generate_roi_preview(video, rx, ry, rw, rh)
+        return rx, ry, rw, rh, generate_roi_preview(vpath, rx, ry, rw, rh)
 
     def apply_preset_bl(video):
-        w, h, _, _, _, _ = get_video_info(video)
+        vpath = get_clean_video_path(video)
+        w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.15), int(h * 0.1)
-        return 10, h - rh - 10, rw, rh, generate_roi_preview(video, 10, h - rh - 10, rw, rh)
+        return 10, h - rh - 10, rw, rh, generate_roi_preview(vpath, 10, h - rh - 10, rw, rh)
 
     def apply_preset_tr(video):
-        w, h, _, _, _, _ = get_video_info(video)
+        vpath = get_clean_video_path(video)
+        w, h, _, _, _, _ = get_video_info(vpath)
         rw, rh = int(w * 0.15), int(h * 0.1)
-        return w - rw - 10, 10, rw, rh, generate_roi_preview(video, w - rw - 10, 10, rw, rh)
+        return w - rw - 10, 10, rw, rh, generate_roi_preview(vpath, w - rw - 10, 10, rw, rh)
 
     btn_preset_gemini_1080p.click(
         fn=apply_preset_gemini_1080p,
@@ -678,7 +718,7 @@ if __name__ == "__main__":
     print(f"🎬 Video Watermark Remover (ProPainter)")
     print(f"🚀 {get_gpu_info()}")
     print(f"==========================================\n")
-    demo.queue().launch(
+    demo.queue(default_concurrency_limit=2).launch(
         inbrowser=True,
         server_name="127.0.0.1",
         server_port=7860,
