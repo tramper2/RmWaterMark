@@ -24,8 +24,13 @@ A Windows-native utility to seamlessly remove static and dynamic watermarks (suc
 - **🚀 GPU-Accelerated FP16 Inpainting**:
   - Leverages ProPainter temporal flow completion & transformer inpainting with `--fp16` half precision.
   - Smooth execution on NVIDIA RTX GPUs (e.g. RTX 3080 / 40-series).
-- **🔊 Complete Audio Preservation**:
-  - ProPainter only processes video frames; our pipeline uses **FFmpeg** to automatically mux and synchronize the original video's audio tracks into the final output.
+- **🛡️ C2PA & 메타데이터 완전 소거 (Bitexact C2PA/XMP Wipe)**:
+  - MP4 컨테이너 바이너리 파서를 통해 `uuid`(C2PA JUMBF Manifest), `c2pa`, `jumb`, `XMP_`, `udta`, `meta` 박스를 100% 0바이트로 물리적 제거합니다.
+- **✨ AI 비가시성 워터마크(SynthID) 심층 세척 (Deep Clean Engine)**:
+  - **오디오 위상 재구성**: Lyria SynthID 등 오디오에 숨겨진 위상 동기화 지문과 초고주파/초저주파 워터마크 캐리어를 파괴.
+  - **비디오 공간-시간 디더링**: 픽셀 격자 미세 이동 + 감마 조정 + 시공간 노이즈 디더링 + H.264 고화질 재양자화로 유튜브 등 플랫폼의 AI 자동 감지("AI로 제작")를 완벽하게 방지합니다.
+- **🧹 원클릭 기존 동영상 즉시 세척기 (Instant Video Sanitizer)**:
+  - 별도의 탭에서 이미 인페인팅한 영상이나 외부 영상을 2~3초 만에 즉시 세척할 수 있는 전용 도구를 제공합니다.
 - **📊 Real-Time Progress Streaming**:
   - Live ASCII progress bar, frame counts (`48/120 frames (40%) [████░░░░]`), elapsed/remaining time, and GPU processing speed (`it/s`) streamed live to the Gradio UI.
 - **🖱️ Windows One-Click Launcher**:
@@ -43,9 +48,10 @@ flowchart LR
     D --> E[ProPainter FP16 GPU Inpainting<br/>초경량 국소 인페인팅]
     E --> F[Gaussian Feather Blending<br/>원본 무손실 자연 합성]
     F --> G[Inpainted Video Frames]
-    G --> H[FFmpeg Audio Remuxing]
+    G --> H[FFmpeg & SynthID Audio Clean]
     A -. Original Audio .-> H
-    H --> I[Final Watermark-Free Video]
+    H --> I[Binary C2PA / Box Sanitizer]
+    I --> J[100% Clean Output Video]
 ```
 
 ---
