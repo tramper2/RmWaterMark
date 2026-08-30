@@ -1049,13 +1049,38 @@ body {
 }
 """
 
-with gr.Blocks(title="AI Watermark Remover & C2PA / SynthID Sanitizer") as demo:
-    gr.Markdown(
+import base64
+
+
+def get_app_icon_base64() -> str:
+    icon_p = BASE_DIR / "assets" / "app_icon.png"
+    if icon_p.exists():
+        with open(icon_p, "rb") as f:
+            return f"data:image/png;base64,{base64.b64encode(f.read()).decode('utf-8')}"
+    return ""
+
+
+with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
+    icon_b64 = get_app_icon_base64()
+    icon_img_tag = (
+        f'<img src="{icon_b64}" style="width: 72px; height: 72px; border-radius: 18px; box-shadow: 0 4px 20px rgba(234, 179, 8, 0.4); margin-right: 18px; vertical-align: middle; display: inline-block;">'
+        if icon_b64
+        else "🍌"
+    )
+
+    gr.HTML(
         f"""
-        # 🎨 AI Watermark Remover & Metadata Sanitizer (Image & Video)
-        ### Powered by **LaMa SOTA Inpainting** (Fast Fourier Convolutions) & **ProPainter** (ICCV 2023)
-        <span class="header-badge">{get_gpu_info()}</span>
-        <span class="header-badge-lama">✨ SOTA LaMa Image AI Active</span>
+        <div style="display: flex; align-items: center; margin-bottom: 12px;">
+            {icon_img_tag}
+            <div>
+                <h1 style="margin: 0; font-size: 1.85rem; font-weight: 800; color: #f8fafc;">AI Watermark Remover & Metadata Sanitizer</h1>
+                <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 0.95rem;">Powered by <b>LaMa SOTA Inpainting</b> & <b>ProPainter</b></p>
+                <div style="margin-top: 6px;">
+                    <span class="header-badge">{get_gpu_info()}</span>
+                    <span class="header-badge-lama">✨ SOTA LaMa Image AI Active</span>
+                </div>
+            </div>
+        </div>
         """
     )
 

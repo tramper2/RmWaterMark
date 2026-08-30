@@ -12,6 +12,7 @@ if sys.platform == "win32":
 
 BASE_DIR = Path(__file__).resolve().parent
 TARGET_BAT = BASE_DIR / "run.bat"
+ICON_ICO = BASE_DIR / "assets" / "app_icon.ico"
 
 ps_script = f"""
 $WshShell = New-Object -ComObject WScript.Shell
@@ -24,6 +25,7 @@ $DesktopPaths = @(
 
 $TargetFile = "{str(TARGET_BAT)}"
 $WorkDir = "{str(BASE_DIR)}"
+$IconFile = "{str(ICON_ICO)}"
 
 foreach ($dp in $DesktopPaths) {{
     if (Test-Path $dp) {{
@@ -32,7 +34,11 @@ foreach ($dp in $DesktopPaths) {{
         $sc.TargetPath = $TargetFile
         $sc.WorkingDirectory = $WorkDir
         $sc.Description = "AI Watermark Remover (Image & Video)"
-        $sc.IconLocation = "$env:SystemRoot\\System32\\imageres.dll,67"
+        if (Test-Path $IconFile) {{
+            $sc.IconLocation = $IconFile
+        }} else {{
+            $sc.IconLocation = "$env:SystemRoot\\System32\\imageres.dll,67"
+        }}
         $sc.Save()
         Write-Output "Created: $ShortcutPath"
     }}

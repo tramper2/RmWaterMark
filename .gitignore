@@ -27,9 +27,10 @@ scratch/
 *.mkv
 *.png
 *.jpg
-*.jpeg
 !assets/
+!assets/**
 !inputs/
+!inputs/**
 
 # IDE & OS
 .vscode/
