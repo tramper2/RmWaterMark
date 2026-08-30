@@ -1128,11 +1128,11 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
                             )
                             with gr.Row():
                                 gr.Markdown("🖌️ **브러시 크기 (Brush Size):**")
-                                btn_brush_5 = gr.Button("초미세 (5px)", size="sm")
-                                btn_brush_15 = gr.Button("소 (15px)", size="sm")
-                                btn_brush_30 = gr.Button("중 (30px)", size="sm")
-                                btn_brush_60 = gr.Button("대 (60px)", size="sm")
-                                btn_brush_100 = gr.Button("특대 (100px)", size="sm")
+                                btn_brush_30 = gr.Button("30px (기본)", size="sm")
+                                btn_brush_60 = gr.Button("60px", size="sm")
+                                btn_brush_100 = gr.Button("100px", size="sm")
+                                btn_brush_200 = gr.Button("200px", size="sm")
+                                btn_brush_300 = gr.Button("300px (특대)", size="sm")
 
                             img_editor = gr.ImageEditor(
                                 label="Interactive Watermark Brush Canvas",
@@ -1297,11 +1297,19 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
                                 </div>
                                 """
                             )
+                            with gr.Row():
+                                gr.Markdown("🖌️ **브러시 크기 (Brush Size):**")
+                                btn_video_brush_30 = gr.Button("30px (기본)", size="sm")
+                                btn_video_brush_60 = gr.Button("60px", size="sm")
+                                btn_video_brush_100 = gr.Button("100px", size="sm")
+                                btn_video_brush_200 = gr.Button("200px", size="sm")
+                                btn_video_brush_300 = gr.Button("300px (특대)", size="sm")
+
                             image_editor = gr.ImageEditor(
                                 label="Watermark Brush Canvas",
                                 type="numpy",
-                                brush=gr.Brush(default_size=25, colors=["#ff3333", "#ffffff", "#00ff00"], default_color="#ff3333"),
-                                eraser=gr.Eraser(default_size=25),
+                                brush=gr.Brush(default_size=30, colors=["#ff3333", "#ffffff", "#00ff00"], default_color="#ff3333"),
+                                eraser=gr.Eraser(default_size=30),
                                 interactive=True,
                             )
                             with gr.Row():
@@ -1633,11 +1641,11 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
     def set_img_brush_size(sz: int):
         return gr.update(brush=gr.Brush(default_size=sz, colors=["#ff3333", "#ffffff", "#00ff00", "#0088ff"], default_color="#ff3333"))
 
-    btn_brush_5.click(lambda: set_img_brush_size(5), outputs=[img_editor])
-    btn_brush_15.click(lambda: set_img_brush_size(15), outputs=[img_editor])
     btn_brush_30.click(lambda: set_img_brush_size(30), outputs=[img_editor])
     btn_brush_60.click(lambda: set_img_brush_size(60), outputs=[img_editor])
     btn_brush_100.click(lambda: set_img_brush_size(100), outputs=[img_editor])
+    btn_brush_200.click(lambda: set_img_brush_size(200), outputs=[img_editor])
+    btn_brush_300.click(lambda: set_img_brush_size(300), outputs=[img_editor])
 
     # Method Change Toggle for Custom Color Picker
     def on_img_method_change(method_name: str):
@@ -1761,6 +1769,15 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
         inputs=[input_video, slider_timestamp],
         outputs=[image_editor],
     )
+
+    def set_video_brush_size(sz: int):
+        return gr.update(brush=gr.Brush(default_size=sz, colors=["#ff3333", "#ffffff", "#00ff00"], default_color="#ff3333"))
+
+    btn_video_brush_30.click(lambda: set_video_brush_size(30), outputs=[image_editor])
+    btn_video_brush_60.click(lambda: set_video_brush_size(60), outputs=[image_editor])
+    btn_video_brush_100.click(lambda: set_video_brush_size(100), outputs=[image_editor])
+    btn_video_brush_200.click(lambda: set_video_brush_size(200), outputs=[image_editor])
+    btn_video_brush_300.click(lambda: set_video_brush_size(300), outputs=[image_editor])
 
     def on_mouse_draw_sync(video, editor, time_sec):
         vpath = get_clean_video_path(video)
