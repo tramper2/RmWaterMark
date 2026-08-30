@@ -1101,9 +1101,9 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
 
     with gr.Tabs():
         # =========================================================================
-        # TAB 1: IMAGE WATERMARK REMOVER (NEW FEATURE)
+        # TAB 1: IMAGE WATERMARK & OBJECT REMOVER (MAGIC ERASER)
         # =========================================================================
-        with gr.TabItem("🖼️ 1. 이미지 워터마크 제거 (Image Watermark Remover)"):
+        with gr.TabItem("🖼️ 1. 이미지 워터마크 & 사물/오브젝트 지우개 (Image & Object Remover)"):
             with gr.Row():
                 # Panel 1: Image Upload & Canvas Editor
                 with gr.Column(scale=1):
@@ -1115,14 +1115,15 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
                     )
                     img_info_box = gr.Markdown("📁 이미지를 업로드하여 해상도 및 파일 정보를 확인하세요.")
 
-                    gr.Markdown("### 2. Select Watermark Region (워터마크 영역 선택)")
+                    gr.Markdown("### 2. Select Removal Region (지울 영역 / 사물 칠하기)")
                     with gr.Tabs() as img_roi_tabs:
-                        with gr.TabItem("🖱️ 마우스 브러시 칠하기 (Mouse Brush)", id="img_tab_draw"):
+                        with gr.TabItem("🖱️ 마우스 브러시 칠하기 (Mouse Brush / Magic Eraser)", id="img_tab_draw"):
                             gr.Markdown(
                                 """
                                 <div class="instruction-box-green">
-                                💡 <b>사용법:</b> 이미지 위의 워터마크 영역을 마우스로 <b>직접 칠하세요</b>.<br>
-                                복잡한 로고나 텍스트 윤곽선에 맞춰 칠한 후 <b>🚀 워터마크 제거 시작</b>을 누르면 완벽하게 지워집니다.
+                                💡 <b>오브젝트 / 워터마크 지우개 사용법:</b><br>
+                                • 지우고 싶은 <b>사물(얼굴, 가방, 화분, 사람, 특정 물체)</b> 또는 <b>워터마크/글자</b>를 마우스 브러시로 넉넉하게 칠하세요.<br>
+                                • 사물의 그림자나 외곽선까지 완전히 덮이도록 칠한 후 <b>🚀 제거 시작</b>을 누르면 뒤편 배경이 마법처럼 자연스럽게 복원됩니다.
                                 </div>
                                 """
                             )
@@ -1240,7 +1241,7 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
                             )
 
                     btn_start_image_wm = gr.Button(
-                        "🚀 Start Image Watermark Removal & Clean (워터마크 제거 시작)",
+                        "🚀 Start Removal & Clean (워터마크 / 사물 제거 시작)",
                         variant="primary",
                         size="lg",
                     )
