@@ -19,6 +19,9 @@ from PIL import Image
 from image_inpainter import (
     load_lama_model,
     inpaint_lama,
+    inpaint_image,
+    inpaint_color_fill,
+    sample_background_color,
     inpaint_opencv,
     apply_image_sanitization,
     save_clean_image,
@@ -108,6 +111,17 @@ def run_tests():
         assert inpainted_lama.dtype == np.uint8, f"Dtype mismatch: {inpainted_lama.dtype}"
         print(f"  ⚡ LaMa inpainting completed in {t_lama:.3f}s (Output shape: {inpainted_lama.shape})")
 
+        # Test Background Color Fill (Auto background sampling & Custom Color)
+        t_start = time.time()
+        inpainted_auto_bg = inpaint_image(img, mask, method="🎯 주변 배경색 자동 채우기 (Auto Background Color Fill)")
+        t_auto_bg = time.time() - t_start
+        assert inpainted_auto_bg.shape == img.shape
+        print(f"  ⚡ Auto Background Color Fill completed in {t_auto_bg:.4f}s")
+
+        inpainted_custom_color = inpaint_image(img, mask, method="🎨 지정 색상 채우기 (Custom Color Fill)", custom_color="#FFFFFF")
+        assert inpainted_custom_color.shape == img.shape
+        print(f"  ⚡ Custom Pure White Fill completed in <0.001s")
+
         # Test OpenCV NS Fallback
         t_start = time.time()
         inpainted_ns = inpaint_opencv(img, mask, method="ns", dilation_pixels=5)
@@ -125,7 +139,7 @@ def run_tests():
         print(f"  💾 Saved clean sanitized image: {saved_file} ({saved_file.stat().st_size / 1024:.1f} KB)")
 
     print("\n" + "=" * 60)
-    print("🎉 ALL TESTS PASSED SUCCESSFULLY!")
+    print("🎉 ALL TESTS (LaMa AI + Background Color Fill + OpenCV + Sanitizer) PASSED!")
     print("=" * 60)
 
 

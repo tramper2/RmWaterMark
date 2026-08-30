@@ -3,7 +3,7 @@ import sys
 import time
 import math
 from pathlib import Path
-from typing import Optional, Tuple, Union, Dict, Any
+from typing import Optional, Tuple, Union, Dict, Any, List
 
 import cv2
 import numpy as np
@@ -281,6 +281,114 @@ def inpaint_opencv(
     return cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
 
 
+def parse_color_to_rgb(color: Union[str, Tuple[int, int, int], List[int]]) -> Tuple[int, int, int]:
+    """Parse hex string ('#ffffff'), RGB tuple/list, or named color to (R, G, B) tuple."""
+    if isinstance(color, (tuple, list)) and len(color) >= 3:
+        return int(color[0]), int(color[1]), int(color[2])
+    if isinstance(color, str):
+        c_str = color.strip().lstrip("#")
+        if len(c_str) == 6:
+            try:
+                r = int(c_str[0:2], 16)
+                g = int(c_str[2:4], 16)
+                b = int(c_str[4:6], 16)
+                return r, g, b
+            except ValueError:
+                pass
+        elif len(c_str) == 3:
+            try:
+                r = int(c_str[0] * 2, 16)
+                g = int(c_str[1] * 2, 16)
+                b = int(c_str[2] * 2, 16)
+                return r, g, b
+            except ValueError:
+                pass
+    return 255, 255, 255
+
+
+def sample_background_color(
+    image_rgb: np.ndarray,
+    mask: np.ndarray,
+    ring_width: int = 8,
+) -> Tuple[int, int, int]:
+    """
+    Sample surrounding background pixels around mask boundary and return median (R, G, B).
+    """
+    h, w = image_rgb.shape[:2]
+    binary_mask = preprocess_mask(mask, (h, w), dilation_pixels=0)
+
+    if not np.any(binary_mask > 0):
+        return 255, 255, 255
+
+    # Dilate mask to create outer sampling ring
+    k_size = ring_width * 2 + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+    dilated = cv2.dilate(binary_mask, kernel, iterations=1)
+
+    # Outer ring: dilated minus mask
+    ring = cv2.bitwise_and(dilated, cv2.bitwise_not(binary_mask))
+    if np.count_nonzero(ring) == 0:
+        # Fallback to entire image corner pixels
+        corners = np.vstack([
+            image_rgb[:10, :10].reshape(-1, 3),
+            image_rgb[:10, -10:].reshape(-1, 3),
+            image_rgb[-10:, :10].reshape(-1, 3),
+            image_rgb[-10:, -10:].reshape(-1, 3),
+        ])
+        med = np.median(corners, axis=0).astype(int)
+        return int(med[0]), int(med[1]), int(med[2])
+
+    pixels = image_rgb[ring > 0]  # (N, 3)
+    med_color = np.median(pixels, axis=0).astype(int)
+    return int(med_color[0]), int(med_color[1]), int(med_color[2])
+
+
+def inpaint_color_fill(
+    image_rgb: np.ndarray,
+    mask: np.ndarray,
+    fill_mode: str = "auto",
+    custom_color: Union[str, Tuple[int, int, int]] = "#FFFFFF",
+    dilation_pixels: int = 3,
+    blend_seam: bool = True,
+) -> np.ndarray:
+    """
+    Erase masked region by filling with auto-detected background color or custom color.
+    - fill_mode: 'auto' (samples surrounding background color), 'custom' (uses custom_color), 'gradient' (interpolates boundary gradient)
+    """
+    h, w = image_rgb.shape[:2]
+    binary_mask = preprocess_mask(mask, (h, w), dilation_pixels=dilation_pixels)
+
+    if not np.any(binary_mask > 0):
+        return image_rgb.copy()
+
+    mode_lower = fill_mode.lower().strip()
+
+    if "gradient" in mode_lower:
+        # Smooth boundary interpolation
+        return inpaint_opencv(image_rgb, binary_mask, method="telea", dilation_pixels=0)
+
+    if "custom" in mode_lower:
+        fill_rgb = parse_color_to_rgb(custom_color)
+    else:
+        # Auto-sample surrounding background color
+        fill_rgb = sample_background_color(image_rgb, binary_mask, ring_width=max(6, dilation_pixels * 2))
+
+    # Create solid color canvas
+    fill_canvas = np.zeros_like(image_rgb)
+    fill_canvas[:, :] = fill_rgb
+
+    if blend_seam:
+        # 3px smooth Gaussian feathering on boundary for anti-aliasing
+        feather_mask = cv2.GaussianBlur(binary_mask.astype(np.float32) / 255.0, (5, 5), 1.2)
+        feather_mask = np.expand_dims(feather_mask, axis=2)
+        blended = fill_canvas.astype(np.float32) * feather_mask + image_rgb.astype(np.float32) * (1.0 - feather_mask)
+        return np.clip(blended, 0, 255).astype(np.uint8)
+    else:
+        res = image_rgb.copy()
+        res[binary_mask > 0] = fill_rgb
+        return res
+
+
 def inpaint_image(
     image_rgb: np.ndarray,
     mask: np.ndarray,
@@ -288,14 +396,46 @@ def inpaint_image(
     dilation_pixels: int = 5,
     blend_seam: bool = True,
     smart_patch: bool = True,
+    fill_mode: str = "auto",
+    custom_color: Union[str, Tuple[int, int, int]] = "#FFFFFF",
     device: Optional[torch.device] = None,
 ) -> np.ndarray:
     """
-    Unified inpainting entry point supporting AI (LaMa) and OpenCV algorithms.
-    - method: 'lama' (default/recommended), 'ns' (Navier-Stokes), 'telea' (Telea)
+    Unified inpainting entry point supporting AI (LaMa), Background Color Fill, and OpenCV.
+    - method:
+        'lama' (AI Deep Learning - Complex textures)
+        'auto_bg' / 'color_fill' (Solid background color fill - Clean documents, products, graphics)
+        'gradient_fill' (Smooth gradient boundary extension)
+        'ns' / 'telea' (OpenCV classic algorithms)
     """
     method_key = method.lower().strip()
-    if "lama" in method_key:
+
+    if "auto" in method_key and "bg" in method_key or "배경색 자동" in method or "auto background" in method_key:
+        return inpaint_color_fill(
+            image_rgb,
+            mask,
+            fill_mode="auto",
+            dilation_pixels=dilation_pixels,
+            blend_seam=blend_seam,
+        )
+    elif "지정 색상" in method or "custom" in method_key or "color fill" in method_key:
+        return inpaint_color_fill(
+            image_rgb,
+            mask,
+            fill_mode="custom",
+            custom_color=custom_color,
+            dilation_pixels=dilation_pixels,
+            blend_seam=blend_seam,
+        )
+    elif "그라데이션" in method or "gradient" in method_key:
+        return inpaint_color_fill(
+            image_rgb,
+            mask,
+            fill_mode="gradient",
+            dilation_pixels=dilation_pixels,
+            blend_seam=blend_seam,
+        )
+    elif "lama" in method_key:
         return inpaint_lama(
             image_rgb,
             mask,

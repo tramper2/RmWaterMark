@@ -541,7 +541,8 @@ def process_image_watermark_removal(
     y: int,
     w: int,
     h: int,
-    inpainting_method: str = "LaMa (AI SOTA - 권장, 최고 품질)",
+    inpainting_method: str = "LaMa (AI SOTA - 복잡한 배경/질감 정밀 복원)",
+    custom_fill_color: str = "#FFFFFF",
     dilation_pixels: int = 5,
     blend_seam: bool = True,
     smart_patch: bool = True,
@@ -551,7 +552,7 @@ def process_image_watermark_removal(
     progress=gr.Progress(track_tqdm=True),
 ) -> Tuple[Optional[str], str]:
     """
-    Execute AI/Classic image watermark removal, sanitization, and clean saving.
+    Execute AI/Classic image watermark removal, background color fill, sanitization, and clean saving.
     """
     try:
         t0 = time.time()
@@ -588,9 +589,9 @@ def process_image_watermark_removal(
             if not ensure_lama_weights():
                 return None, "❌ LaMa 모델 가중치(big-lama.pt) 다운로드에 실패했습니다."
 
-        progress(0.4, desc=f"고화질 인페인팅 실행 중 ({inpainting_method})...")
+        progress(0.4, desc=f"고화질 인페인팅/배경색 채우기 실행 중 ({inpainting_method})...")
 
-        # Execute Inpainting
+        # Execute Inpainting / Background Color Fill
         t_inpaint_start = time.time()
         inpainted_rgb = inpaint_image(
             image_rgb=img_rgb,
@@ -599,6 +600,7 @@ def process_image_watermark_removal(
             dilation_pixels=int(dilation_pixels),
             blend_seam=blend_seam,
             smart_patch=smart_patch,
+            custom_color=custom_fill_color,
         )
         inpaint_duration = time.time() - t_inpaint_start
 
@@ -1124,10 +1126,18 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
                                 </div>
                                 """
                             )
+                            with gr.Row():
+                                gr.Markdown("🖌️ **브러시 크기 (Brush Size):**")
+                                btn_brush_5 = gr.Button("초미세 (5px)", size="sm")
+                                btn_brush_15 = gr.Button("소 (15px)", size="sm")
+                                btn_brush_30 = gr.Button("중 (30px)", size="sm")
+                                btn_brush_60 = gr.Button("대 (60px)", size="sm")
+                                btn_brush_100 = gr.Button("특대 (100px)", size="sm")
+
                             img_editor = gr.ImageEditor(
                                 label="Interactive Watermark Brush Canvas",
                                 type="numpy",
-                                brush=gr.Brush(default_size=30, colors=["#ff3333", "#ffffff", "#00ff00"], default_color="#ff3333"),
+                                brush=gr.Brush(default_size=30, colors=["#ff3333", "#ffffff", "#00ff00", "#0088ff"], default_color="#ff3333"),
                                 eraser=gr.Eraser(default_size=30),
                                 interactive=True,
                             )
@@ -1168,22 +1178,33 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
                             )
 
                     # Advanced Inpainting & Sanitization Options for Images
-                    with gr.Accordion("⚙️ 인페인팅 엔진 & 세척 고급 설정 (Advanced Options)", open=True):
+                    with gr.Accordion("⚙️ 인페인팅 엔진 & 배경색 채우기 고급 설정 (Advanced Options)", open=True):
                         with gr.Row():
                             radio_img_method = gr.Radio(
-                                label="Inpainting Engine (인페인팅 알고리즘)",
+                                label="Inpainting Engine / Fill Mode (인페인팅 & 배경색 채우기 방식)",
                                 choices=[
-                                    "LaMa (AI SOTA - 권장, 최고 품질)",
+                                    "LaMa (AI SOTA - 복잡한 배경/질감 정밀 복원)",
+                                    "🎯 주변 배경색 자동 채우기 (Auto Background Fill - 단색/문서/상품)",
+                                    "🎨 지정 색상으로 채우기 (Custom Color Fill - 컬러 피커)",
+                                    "🌈 주변 그라데이션 보간 채우기 (Smooth Gradient Fill)",
                                     "OpenCV Navier-Stokes (초고속)",
                                     "OpenCV Telea (고속)",
                                 ],
-                                value="LaMa (AI SOTA - 권장, 최고 품질)",
-                                info="LaMa는 Fourier Convolutions 기반으로 복잡한 질감과 배경을 티 없이 자연스럽게 복원합니다.",
+                                value="LaMa (AI SOTA - 복잡한 배경/질감 정밀 복원)",
+                                info="단색/문서/상품 배경은 '주변 배경색 자동 채우기'를 선택하면 AI 왜곡 없이 100% 깔끔하게 배경색으로 메워집니다.",
                             )
                             radio_img_format = gr.Radio(
                                 label="Output Format (출력 포맷)",
                                 choices=["Auto (원본 포맷 유지)", "PNG (Lossless)", "JPEG (High Quality)", "WEBP"],
                                 value="Auto (원본 포맷 유지)",
+                            )
+
+                        with gr.Row():
+                            picker_custom_color = gr.ColorPicker(
+                                label="🎨 채울 배경 색상 선택 (Custom Fill Color)",
+                                value="#FFFFFF",
+                                visible=False,
+                                info="'지정 색상으로 채우기' 선택 시 원하는 색상 코드를 지정하세요.",
                             )
 
                         with gr.Row():
@@ -1608,6 +1629,28 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
         outputs=[img_slider_x, img_slider_y, img_slider_w, img_slider_h, img_preview_box],
     )
 
+    # Brush Size Quick Presets
+    def set_img_brush_size(sz: int):
+        return gr.update(brush=gr.Brush(default_size=sz, colors=["#ff3333", "#ffffff", "#00ff00", "#0088ff"], default_color="#ff3333"))
+
+    btn_brush_5.click(lambda: set_img_brush_size(5), outputs=[img_editor])
+    btn_brush_15.click(lambda: set_img_brush_size(15), outputs=[img_editor])
+    btn_brush_30.click(lambda: set_img_brush_size(30), outputs=[img_editor])
+    btn_brush_60.click(lambda: set_img_brush_size(60), outputs=[img_editor])
+    btn_brush_100.click(lambda: set_img_brush_size(100), outputs=[img_editor])
+
+    # Method Change Toggle for Custom Color Picker
+    def on_img_method_change(method_name: str):
+        if "지정 색상" in method_name or "custom" in str(method_name).lower():
+            return gr.update(visible=True)
+        return gr.update(visible=False)
+
+    radio_img_method.change(
+        fn=on_img_method_change,
+        inputs=[radio_img_method],
+        outputs=[picker_custom_color],
+    )
+
     btn_start_image_wm.click(
         fn=process_image_watermark_removal,
         inputs=[
@@ -1619,6 +1662,7 @@ with gr.Blocks(title="AI Watermark Remover (Image & Video)") as demo:
             img_slider_w,
             img_slider_h,
             radio_img_method,
+            picker_custom_color,
             img_slider_dilation,
             chk_img_blend_seam,
             chk_img_smart_patch,
