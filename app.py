@@ -148,7 +148,7 @@ def apply_video_audio_sanitization(
             "highpass=f=30,lowpass=f=19000,atempo=1.001,aresample=44100,volume=1.002"
         )
 
-    ffmpeg_cmd = ["ffmpeg", "-y", "-i", str(input_video_path)]
+    ffmpeg_cmd = [get_ffmpeg_binary(), "-y", "-i", str(input_video_path)]
 
     has_audio = bool(
         original_audio_path
@@ -282,16 +282,29 @@ def get_clean_image_array(image_input: Any) -> Optional[np.ndarray]:
     return None
 
 
-def check_ffmpeg() -> bool:
+def get_ffmpeg_binary() -> str:
+    """Find system FFmpeg or fallback to bundled imageio-ffmpeg binary."""
     try:
-        subprocess.run(
-            ["ffmpeg", "-version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True,
-        )
-        return True
+        res = subprocess.run(["ffmpeg", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0:
+            return "ffmpeg"
+    except Exception:
+        pass
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.exists(exe):
+            return exe
+    except Exception:
+        pass
+    return "ffmpeg"
+
+
+def check_ffmpeg() -> bool:
+    exe = get_ffmpeg_binary()
+    try:
+        res = subprocess.run([exe, "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return res.returncode == 0
     except Exception:
         return False
 
