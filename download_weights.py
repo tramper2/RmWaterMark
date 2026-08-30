@@ -16,6 +16,11 @@ WEIGHTS = {
         "https://github.com/sczhou/ProPainter/releases/download/v0.1.0/raft-things.pth",
         "https://huggingface.co/sczhou/ProPainter/resolve/main/raft-things.pth",
     ],
+    "big-lama.pt": [
+        "https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt",
+        "https://huggingface.co/smartcomputer/big-lama/resolve/main/big-lama.pt",
+        "https://huggingface.co/anyisalin/big-lama/resolve/main/big-lama.pt",
+    ],
 }
 
 
@@ -65,42 +70,72 @@ def download_with_progress(url: str, save_path: Path):
         return False
 
 
-def ensure_weights(target_dirs=None):
+def ensure_single_weight(filename: str, target_dirs=None) -> bool:
     if target_dirs is None:
         base_dir = Path(__file__).resolve().parent
         target_dirs = [
-            base_dir / "ProPainter" / "weights",
             base_dir / "weights",
+            base_dir / "ProPainter" / "weights",
         ]
 
     for d in target_dirs:
         d.mkdir(parents=True, exist_ok=True)
 
-    all_success = True
-    for filename, urls in WEIGHTS.items():
-        # Check if already exists in primary dir (ProPainter/weights)
-        primary_file = target_dirs[0] / filename
-        if primary_file.exists() and primary_file.stat().st_size > 1024 * 1024:
-            print(f"[OK] {filename} already exists ({primary_file.stat().st_size / (1024 * 1024):.1f} MB)")
-        else:
-            success = False
-            for url in urls:
-                if download_with_progress(url, primary_file):
-                    success = True
-                    break
-            if not success:
-                print(f"[ERROR] Could not download {filename}")
-                all_success = False
+    urls = WEIGHTS.get(filename, [])
+    if not urls:
+        print(f"[ERROR] Unknown weight filename: {filename}")
+        return False
 
-        # Copy/link to other target dirs if needed
-        for d in target_dirs[1:]:
-            dest_file = d / filename
-            if not dest_file.exists() and primary_file.exists():
-                try:
-                    import shutil
-                    shutil.copyfile(primary_file, dest_file)
-                except Exception as e:
-                    print(f"Warning: could not mirror {filename} to {dest_file}: {e}")
+    primary_file = target_dirs[0] / filename
+    if primary_file.exists() and primary_file.stat().st_size > 1024 * 1024:
+        print(f"[OK] {filename} already exists ({primary_file.stat().st_size / (1024 * 1024):.1f} MB)")
+        success = True
+    else:
+        success = False
+        for url in urls:
+            if download_with_progress(url, primary_file):
+                success = True
+                break
+        if not success:
+            print(f"[ERROR] Could not download {filename}")
+
+    # Mirror to other target directories
+    for d in target_dirs[1:]:
+        dest_file = d / filename
+        if not dest_file.exists() and primary_file.exists():
+            try:
+                import shutil
+                shutil.copyfile(primary_file, dest_file)
+            except Exception as e:
+                print(f"Warning: could not mirror {filename} to {dest_file}: {e}")
+
+    return success
+
+
+def ensure_lama_weights(target_dirs=None) -> bool:
+    return ensure_single_weight("big-lama.pt", target_dirs=target_dirs)
+
+
+def ensure_propainter_weights(target_dirs=None) -> bool:
+    all_ok = True
+    for fn in ["ProPainter.pth", "recurrent_flow_completion.pth", "raft-things.pth"]:
+        if not ensure_single_weight(fn, target_dirs=target_dirs):
+            all_ok = False
+    return all_ok
+
+
+def ensure_weights(target_dirs=None):
+    if target_dirs is None:
+        base_dir = Path(__file__).resolve().parent
+        target_dirs = [
+            base_dir / "weights",
+            base_dir / "ProPainter" / "weights",
+        ]
+
+    all_success = True
+    for filename in WEIGHTS.keys():
+        if not ensure_single_weight(filename, target_dirs=target_dirs):
+            all_success = False
 
     return all_success
 
@@ -108,7 +143,7 @@ def ensure_weights(target_dirs=None):
 if __name__ == "__main__":
     success = ensure_weights()
     if success:
-        print("\nAll ProPainter weights are ready!")
+        print("\nAll weights (ProPainter + LaMa) are ready!")
     else:
         print("\nFailed to download some weights.")
         sys.exit(1)

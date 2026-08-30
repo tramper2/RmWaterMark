@@ -1,112 +1,102 @@
-# 🎬 Local Video Watermark Remover (ProPainter + Gradio)
+# 🎨 AI Watermark Remover & Metadata Sanitizer (Image & Video)
 
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%2012.1-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![ProPainter](https://img.shields.io/badge/Model-ProPainter%20(ICCV%202023)-blue)](https://github.com/sczhou/ProPainter)
+[![LaMa](https://img.shields.io/badge/Image_Model-LaMa%20(Fast%20Fourier%20AI)-success)](https://github.com/advimman/lama)
+[![ProPainter](https://img.shields.io/badge/Video_Model-ProPainter%20(ICCV%202023)-blue)](https://github.com/sczhou/ProPainter)
 [![Gradio](https://img.shields.io/badge/UI-Gradio%20Web-orange?logo=gradio&logoColor=white)](https://gradio.app/)
 [![FFmpeg](https://img.shields.io/badge/Audio-FFmpeg%20Preserved-007808?logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
 
-A Windows-native utility to seamlessly remove static and dynamic watermarks (such as Gemini watermarks) from video files using the state-of-the-art **ProPainter** video inpainting model, packaged with a rich **Gradio** web interface and **FFmpeg** audio stream preservation.
+**이미지(Image) 및 동영상(Video)**에서 워터마크(Gemini, DALL-E, TikTok, 로고, 자막 등)를 인공지능으로 자연스럽고 완벽하게 제거하고, **C2PA / EXIF 메타데이터 및 AI 비가시성 워터마크(SynthID)**를 100% 소거하는 Windows 로컬 GUI 애플리케이션입니다.
 
 ---
 
 ## ✨ Key Features
 
-- **🎯 Interactive Visual ROI Selection (Mouse Drag & Draw)**:
-  - **🖱️ Mouse Drag & Freehand Brush**: Drag and paint directly over the watermark on the video canvas with your mouse; coordinates and bounding boxes are automatically computed and synchronized.
-  - **⏱️ Timeline Frame Scrubber**: If the watermark is difficult to see due to the background color in the first frame, scrub the timeline slider or click quick jump buttons (0%, 25%, 50%, 75%, End) to load any clear frame onto the ROI canvas in real time.
-  - **📐 Custom Precision Sliders**: Live bounding box overlay and pixel coordinate controls.
-- **⚡ Smart Local ROI Cropping & Lossless Blending (스마트 국소 ROI 크롭 & 무손실 합성)**:
-  - **90%+ VRAM 절감 & 10배 속도 향상**: 전체 화면(1080p, 4K)을 통째로 신경망에 넣지 않고 워터마크 영역 주변(패딩 포함)만 스마트 크롭하여 초경량(VRAM ~200MB)으로 처리, 8GB GPU에서도 1080×1920 세로형 비디오 OOM을 완벽히 방지합니다.
-  - **원본 100% 화질 보존 (가우시안 페더링 블렌딩)**: 인페인팅된 영역만을 소프트 엣지 마스크로 원본 고화질 프레임에 합성하여, 워터마크 외 98% 이상의 영상 영역은 화질 저하나 블러 없이 원본 그대로 보존됩니다.
-- **⚡ One-Click Presets**:
-  - Quick presets for **Gemini (1080p Bottom-Right)**, **Gemini (9:16 Shorts)**, **Gemini (1:1 Square)**, **Bottom-Right**, **Bottom-Left**, and **Top-Right**.
-- **🚀 GPU-Accelerated FP16 Inpainting**:
-  - Leverages ProPainter temporal flow completion & transformer inpainting with `--fp16` half precision.
-  - Smooth execution on NVIDIA RTX GPUs (e.g. RTX 3080 / 40-series).
-- **🛡️ C2PA & 메타데이터 완전 소거 (Bitexact C2PA/XMP Wipe)**:
-  - MP4 컨테이너 바이너리 파서를 통해 `uuid`(C2PA JUMBF Manifest), `c2pa`, `jumb`, `XMP_`, `udta`, `meta` 박스를 100% 0바이트로 물리적 제거합니다.
-- **✨ AI 비가시성 워터마크(SynthID) 심층 세척 (Deep Clean Engine)**:
-  - **오디오 위상 재구성**: Lyria SynthID 등 오디오에 숨겨진 위상 동기화 지문과 초고주파/초저주파 워터마크 캐리어를 파괴.
-  - **비디오 공간-시간 디더링**: 픽셀 격자 미세 이동 + 감마 조정 + 시공간 노이즈 디더링 + H.264 고화질 재양자화로 유튜브 등 플랫폼의 AI 자동 감지("AI로 제작")를 완벽하게 방지합니다.
-- **🧹 원클릭 기존 동영상 즉시 세척기 (Instant Video Sanitizer)**:
-  - 별도의 탭에서 이미 인페인팅한 영상이나 외부 영상을 2~3초 만에 즉시 세척할 수 있는 전용 도구를 제공합니다.
-- **📊 Real-Time Progress Streaming**:
-  - Live ASCII progress bar, frame counts (`48/120 frames (40%) [████░░░░]`), elapsed/remaining time, and GPU processing speed (`it/s`) streamed live to the Gradio UI.
-- **🖱️ Windows One-Click Launcher**:
-  - Includes `run.bat` for instant startup.
+### 🖼️ 1. 이미지 워터마크 제거 (Image Watermark Remover)
+- **🧠 SOTA AI 인페인팅 엔진 (LaMa - Fast Fourier Convolutions)**:
+  - 고주파 질감 및 복잡한 배경 패턴(자연물, 건물, 텍스트, 그라데이션)을 흐림이나 왜곡 없이 원본처럼 사실적으로 복원.
+  - 보조 초고속 엔진으로 **OpenCV Navier-Stokes** 및 **Telea** 알고리즘 지원.
+- **📐 임의의 모든 해상도 & 화면비 완벽 지원**:
+  - SD, HD, FHD, 4K, 8K 및 가로형(16:9), 세로형(9:16), 정방형(1:1) 등 어떤 크기의 이미지도 제약 없이 처리.
+- **⚡ 스마트 고해상도(4K/8K) 국소 크롭 가속 (Smart Patch Mode)**:
+  - 4K/8K 대용량 이미지에서도 워터마크 영역 주변만 스마트 크롭하여 **0.1~0.4초 만에 초고속 인페인팅** 수행.
+  - 워터마크 외 나머지 영역은 **100% 원본 픽셀 화질 무손실 유지**.
+- **🎨 유연한 워터마크 영역 지정**:
+  - **마우스 브러시/지우개 직접 칠하기 (`gr.ImageEditor`)**: 비정형 로고나 워터마크를 브러시로 직접 칠해 정밀 제거.
+  - **원클릭 위치 프리셋**: 16:9 BR, 9:16 BR, 1:1 BR, 우측 하단, 좌측 하단, 상단, 중앙 등 원클릭 설정.
+  - **정밀 사각형 좌표 슬라이더 (X, Y, W, H)**: 실시간 빨간색 바운딩 박스 미리보기.
+- **🛡️ 이미지 메타데이터 & AI 비가시성 워터마크(SynthID) 완전 소거**:
+  - EXIF, XMP, IPTC, C2PA 매니페스트 100% 0바이트 소거.
+  - 픽셀 격자 미세 교란을 통해 SNS/플랫폼 AI 자동 감지 차단.
 
 ---
 
-## 🏗️ Pipeline Architecture (스마트 파이프라인 구조)
+### 🎬 2. 동영상 워터마크 제거 (Video Watermark Remover)
+- **ProPainter ICCV 2023 딥러닝 비디오 인페인팅**:
+  - 시공간 광학 흐름(Optical Flow) 및 트랜스포머 기반 동영상 배경 복원.
+- **⏱️ 타임라인 프레임 스크러버**:
+  - 타임라인을 자유롭게 이동하여 워터마크가 선명하게 보이는 장면을 불러와 마우스로 브러시 마스크 지정.
+- **🎵 오디오 무손실 동기화**:
+  - FFmpeg 기반 원본 음성 스트림 완벽 보존 및 위상 재구성.
+
+---
+
+### 🧹 3. 기존 동영상 & 이미지 즉시 세척기 (Instant Sanitizer)
+- 인페인팅 없이도 이미 생성된 모든 동영상(MP4/MOV) 또는 이미지(PNG/JPG/WEBP)를 1초 만에 C2PA/EXIF/SynthID 완전 소거.
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
-flowchart LR
-    A[Upload Video] --> B[Interactive ROI Selector]
-    B --> C[Generate Binary Mask PNG]
-    C --> D[Smart Local ROI Cropper<br/>워터마크 영역 자동 크롭]
-    D --> E[ProPainter FP16 GPU Inpainting<br/>초경량 국소 인페인팅]
-    E --> F[Gaussian Feather Blending<br/>원본 무손실 자연 합성]
-    F --> G[Inpainted Video Frames]
-    G --> H[FFmpeg & SynthID Audio Clean]
-    A -. Original Audio .-> H
-    H --> I[Binary C2PA / Box Sanitizer]
-    I --> J[100% Clean Output Video]
+flowchart TD
+    subgraph Image Pipeline
+        A1[Upload Image Any Size] --> B1[Brush Canvas / Presets / ROI Sliders]
+        B1 --> C1[Smart Patch Bounding Box]
+        C1 --> D1[LaMa Fourier Convolutions AI Inpainting]
+        D1 --> E1[Gaussian Feathered Seamless Blend]
+        E1 --> F1[EXIF / C2PA / SynthID Pixel Wipe]
+        F1 --> G1[Clean Watermark-Free Image]
+    end
+
+    subgraph Video Pipeline
+        A2[Upload Video] --> B2[Timeline Scrub & Brush ROI]
+        B2 --> C2[Smart Local ROI Cropper]
+        C2 --> D2[ProPainter FP16 GPU Inpainting]
+        D2 --> E2[Gaussian Feather Blending]
+        E2 --> F2[FFmpeg Audio Stream & C2PA Box Sanitizer]
+        F2 --> G2[100% Clean Output Video]
+    end
 ```
 
 ---
 
-## 🔬 Smart Processing Engine (새로운 스마트 처리 방식 상세)
+## 📋 System Requirements
 
-### 1. 국소 영역 자동 크롭 (Smart Local ROI Cropping)
-- **기존 방식의 문제점**: 1080×1920(세로형 쇼츠) 또는 1920×1080 고해상도 비디오 전체(200만~800만 픽셀)를 트랜스포머 및 광학 흐름 신경망에 통째로 입력할 경우, 17~20개 시계열 프레임 텐서 연산으로 인해 **15GB 이상의 GPU VRAM이 요구되어 8GB VRAM 그래픽카드에서 CUDA Out of Memory(OOM)**가 발생했습니다.
-- **해결 방식**: 워터마크가 화면의 국소 영역(전체 화면의 45% 미만)인 경우, 워터마크 바운딩 박스 주변에 충분한 컨텍스트 마진(64px 패딩 및 16배수 크기 자동 정렬)을 더해 필요한 영역(예: 224×224)만 초경량으로 자동 크롭하여 인페인팅을 수행합니다.
-- **성능 개선**:
-  - **VRAM 사용량**: 12GB+ $\rightarrow$ **~200MB 수준으로 90% 이상 절감**
-  - **처리 속도**: 초당 0.5 it/s $\rightarrow$ **초당 5~6 it/s로 10배 이상 고속화**
-  - **해상도 제약 해소**: 1080p, 4K, 세로형 9:16, 정사각형 1:1 영상도 메모리 부족 없이 완벽 지원
-
-### 2. 가우시안 페더링 무손실 합성 (Gaussian Feathered Lossless Blending)
-- 인페인팅된 결과 패치를 가우시안 블러(Gaussian Blur) 기반의 부드러운 소프트 알파 마스크를 사용하여 원본 1080p 프레임 위에 완벽하게 Seamless Blending합니다.
-- 워터마크가 없는 **영상의 98% 이상 영역은 인코딩 열화나 블러링 없이 원본 비디오 100% 최고 화질을 그대로 유지**합니다.
-
----
-
-## 📋 Prerequisites
-
-- **OS**: Windows 10 / 11 (x64)
-- **GPU**: NVIDIA GPU with CUDA support (RTX 3060 / 3070 / 3080 / 40-series recommended, >= 6GB VRAM)
-- **Python**: Python 3.10 or 3.11 (64-bit)
-- **FFmpeg**: `ffmpeg` must be installed and added to system `PATH`
-  - *Verify via*: `ffmpeg -version`
+- **OS**: Windows 10 / 11 (64-bit)
+- **GPU**: NVIDIA GPU with CUDA (RTX 3060 / 3070 / 3080 / 40-series 권장, CPU 모드도 지원)
+- **Python**: Python 3.10 또는 3.11
+- **FFmpeg**: 시스템 PATH에 등록된 FFmpeg (`ffmpeg -version` 확인)
 
 ---
 
 ## ⚙️ Installation & Setup
 
-### 1. Clone Repository
+### 1. 가상환경 생성 및 의존성 패키지 설치
 ```powershell
-git clone git@github.com:tramper2/RmWaterMark.git
-cd RmWaterMark
-```
-
-### 2. Create Virtual Environment & Install Dependencies
-```powershell
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
+# 가상환경 활성화
 .\venv\Scripts\activate
 
-# Install PyTorch with CUDA support (cu121)
+# PyTorch CUDA 12.1 설치 (필요시)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
-# Install project dependencies
+# 의존성 패키지 설치
 pip install -r requirements.txt
 ```
 
-### 3. Download Model Weights
-Download the required ProPainter weights (`ProPainter.pth`, `recurrent_flow_completion.pth`, `raft-things.pth`):
+### 2. 사전 학습 가중치 다운로드
+LaMa(`big-lama.pt`) 및 ProPainter 모델 가중치를 자동으로 다운로드 및 검증합니다:
 ```powershell
 python download_weights.py
 ```
@@ -115,51 +105,27 @@ python download_weights.py
 
 ## 🚀 How to Run
 
-### Method 1: Double-Click Launcher (Windows)
-Simply double-click `run.bat` in the project root folder.
+### 방법 1: 원클릭 실행 파일 (Windows)
+프로젝트 루트 폴더의 **`run.bat`** 파일을 더블 클릭합니다.
 
-### Method 2: Command Line
+### 방법 2: 터미널 실행
 ```powershell
 .\venv\Scripts\activate
 python app.py
 ```
-Open your web browser and navigate to: **`http://127.0.0.1:7860`**
+웹 브라우저에서 **`http://127.0.0.1:7860`** 으로 접속합니다.
 
 ---
 
-## 📖 How to Use
+## 📖 사용 방법 (How to Use)
 
-1. **Upload Video**: Drag & drop your video into the **Source Video** box.
-2. **Set Watermark Region**:
-   - Choose a preset (e.g. *Gemini (9:16 Shorts)*) or fine-tune `X`, `Y`, `Width`, `Height` sliders.
-   - You can also scrub the **Timeline Frame Scrubber** to jump to a scene where the watermark is clearest, and paint directly over it with your mouse.
-   - Inspect the **ROI Visual Preview** to make sure the red box fully covers the watermark.
-3. **Optimize Settings (Optional)**:
-   - Expand *Advanced Optimization Settings* to adjust `Subvideo Length` or `Mask Dilation` if needed.
-4. **Start Removal**: Click **🚀 Start Watermark Removal**.
-5. **Download Output**: Preview and download the final watermarked-free video with full audio synchronization.
-
----
-
-## 🎯 Recommended Watermark Preset Coordinates
-
-| Aspect Ratio / Platform | Resolution | X (Left) | Y (Top) | Width | Height | Description |
-| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| 📱 **Gemini (9:16 Vertical / Shorts)** | **1080 × 1920** | **865** | **1700** | **80** | **80** | Gemini logo / text watermark (Bottom-Right) |
-| 🖥️ **Gemini (16:9 Landscape)** | **1920 × 1080** | **1700** | **950** | **200** | **100** | Standard 1080p Bottom-Right watermark |
-| 🔲 **Gemini (1:1 Square)** | **1080 × 1080** | **870** | **980** | **190** | **80** | Square video Bottom-Right watermark |
-
-> [!TIP]
-> 영상 배경 색상이 워터마크 색과 동일하여 잘 보이지 않는 경우, **1번 패널 하단의 타임라인 슬라이더(또는 25%/50% 버튼)**를 이용해 워터마크가 선명하게 보이는 장면으로 이동하여 지정할 수 있습니다.
-
----
-
-## ⏱️ Model Initialization Notice (초기 로딩 시간 안내)
-
-> [!NOTE]
-> **🚀 시작 시 딥러닝 모델 로딩 지연 안내**:
-> 워터마크 제거를 처음 실행할 때, 대용량 신경망 모델(**ProPainter InpaintGenerator**, **Recurrent Flow Completion**, **RAFT 광학 흐름 신경망**) 및 사전 학습 가중치 파라미터를 GPU VRAM으로 적재하고 초기 메모리 구조를 빌드하는 과정이 수반됩니다.
-> 따라서 **첫 1회 실행 시 약 10초 ~ 30초 정도의 모델 준비 시간**이 소요될 수 있으며, 초기화가 완료된 후부터는 초당 수 프레임 이상의 빠른 GPU 가속으로 실시간 처리됩니다.
+### 🖼️ 이미지 워터마크 제거
+1. **이미지 업로드**: `1. 이미지 워터마크 제거` 탭에서 이미지를 드래그 & 드롭으로 업로드합니다.
+2. **워터마크 위치 지정**:
+   - **마우스 브러시**: 이미지 캔버스 위에서 워터마크 부분을 마우스로 칠합니다.
+   - **원클릭 프리셋**: `🖥️ 16:9 BR`, `📱 9:16 Shorts`, `📍 Auto BR` 등 프리셋 버튼을 클릭하거나 `X, Y, Width, Height` 슬라이더로 조절합니다.
+3. **옵션 선택**: `LaMa (AI SOTA)` 엔진 선택, 마스크 확장(Dilation, 기본 5px) 및 메타데이터 소거 확인.
+4. **실행**: **`🚀 워터마크 제거 시작`** 클릭 후 고화질 결과 이미지 즉시 다운로드.
 
 ---
 
@@ -167,14 +133,15 @@ Open your web browser and navigate to: **`http://127.0.0.1:7860`**
 
 ```text
 RmWaterMark/
-├── ProPainter/               # ProPainter core algorithms & models
-├── weights/                  # Model weights (ProPainter.pth, etc.)
-├── app.py                    # Main Gradio application & processing pipeline
-├── download_weights.py       # Pretrained weights verification & downloader
+├── ProPainter/               # ProPainter video inpainting engine
+├── weights/                  # Model weights (big-lama.pt, ProPainter.pth, etc.)
+├── app.py                    # Main Gradio application (Image + Video + Sanitizer)
+├── image_inpainter.py        # LaMa Fourier AI & OpenCV image inpainting engine
+├── download_weights.py       # Weights downloader (LaMa + ProPainter)
+├── test_image_pipeline.py    # Automated image pipeline test suite
+├── test_pipeline.py          # Automated video pipeline test suite
 ├── requirements.txt          # Python dependencies
 ├── run.bat                   # Windows one-click launcher
-├── test_pipeline.py          # End-to-end automated test script
-├── .gitignore                # Git ignore rules for virtualenv & weights
 └── README.md                 # Project documentation
 ```
 
@@ -182,6 +149,7 @@ RmWaterMark/
 
 ## 📜 Acknowledgements & References
 
+- **LaMa**: [Resolution-robust Large Mask Inpainting with Fourier Convolutions (WACV 2022)](https://github.com/advimman/lama)
 - **ProPainter**: [Improving Propagation and Transformer for Video Inpainting (ICCV 2023)](https://github.com/sczhou/ProPainter)
-- **Gradio**: [Build & Share Machine Learning Apps](https://gradio.app/)
-- **FFmpeg**: [A complete, cross-platform solution to record, convert and stream audio and video](https://ffmpeg.org/)
+- **Gradio**: [Build & Share Machine Learning Web Apps](https://gradio.app/)
+- **FFmpeg**: [Audio/Video Processing Suite](https://ffmpeg.org/)
